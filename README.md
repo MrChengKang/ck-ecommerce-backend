@@ -1,11 +1,9 @@
-Project Title: CK STORE - Fullstack E-commerce System
+✅ Security: 集成 BCryptPasswordEncoder 實現密碼雜湊存儲。
 
-Tech Stack: React, Tailwind CSS, Spring Boot, MySQL, JWT.
+✅ Auth Flow: 實現真正的 Gmail SMTP 驗證碼 (OTP) 發送功能。
 
-Features:
+✅ UX/UI: 優化登入/註冊加載狀態 (Loading Spinner) 與 Remember Me 功能。
 
-User Authentication (JWT)
+✅ Robustness: 增加前端 Regex 校驗（Email 格式、強密碼要求）。
 
-Admin Dashboard (Statistics, CRUD products)
-
-Shopping Cart System
+✅ Flexible Login: 支持 Username 或 Email 雙向登入。
