@@ -10,6 +10,7 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -164,5 +165,25 @@ public class AuthController {
           .orElse(ResponseEntity.status(404).body("User not found"));
     }
     return ResponseEntity.status(400).body("Invalid OTP!");
+  }
+
+  @PostMapping("/validate-token")
+  public ResponseEntity<?> validateToken(@RequestHeader("Authorization") String authHeader) {
+    try {
+      // 去掉 "Bearer " 字眼拿到純 Token
+      String token = authHeader.substring(7);
+
+      // 🚨 關鍵：呼叫剛才寫的 validateToken 方法
+      // 這個方法裡面 parseClaimsJws 如果過期，會噴 ExpiredJwtException
+      boolean isValid = jwtUtils.validateToken(token);
+
+      if (isValid) {
+        return ResponseEntity.ok("ALIVE");
+      } else {
+        return ResponseEntity.status(401).body("EXPIRED");
+      }
+    } catch (Exception e) {
+      return ResponseEntity.status(401).body("INVALID_OR_EXPIRED");
+    }
   }
 }
