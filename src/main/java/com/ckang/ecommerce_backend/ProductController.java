@@ -1,79 +1,90 @@
 package com.ckang.ecommerce_backend;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
+import java.nio.file.*;
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/products")
-// 這裡建議加上 * 或者確保前端 port 正確，避免 CORS 擋住
-@CrossOrigin(origins = "http://localhost:5173")
+// 💡 優化：允許前端所有常用的請求方法
+@CrossOrigin(origins = "http://localhost:5173", allowedHeaders = "*", methods = { RequestMethod.GET, RequestMethod.POST,
+    RequestMethod.PUT, RequestMethod.DELETE })
 public class ProductController {
 
   @Autowired
   private ProductRepository productRepository;
 
-  // --- 1. 你漏掉的這個：獲取所有商品 (用於首頁) ---
+  // 🚨 修正：如果你有 ProductService 就注入它，如果沒有就直接用 Repository
+  // @Autowired
+  // private ProductService productService;
+
+  // --- 1. 獲取所有商品 ---
   @GetMapping
   public List<Product> getAllProducts() {
     return productRepository.findAll();
   }
 
-  // --- 2. 獲取單一商品 (用於詳情頁) ---
+  // --- 2. 獲取單一商品 ---
   @GetMapping("/{id}")
-  public Product getProductById(@PathVariable Long id) {
+  public ResponseEntity<Product> getProductById(@PathVariable Long id) {
     return productRepository.findById(id)
-        .orElseThrow(() -> new RuntimeException("Product not found with id: " + id));
+        .map(ResponseEntity::ok)
+        .orElse(ResponseEntity.notFound().build());
   }
 
-  // 1. 新增商品
+  // --- 3. 新增商品 ---
   @PostMapping
-  public Product createProduct(@RequestBody Product product) {
-    return productRepository.save(product);
+  public ResponseEntity<?> addProduct(@RequestBody Product product) {
+    try {
+      // 💡 這裡改用 productRepository 直接儲存 (最簡單穩定的做法)
+      Product savedProduct = productRepository.save(product);
+      return ResponseEntity.ok(savedProduct);
+    } catch (Exception e) {
+      e.printStackTrace(); // 在後台噴出具體錯誤，方便你 Debug
+      return ResponseEntity.status(400).body("Error saving product: " + e.getMessage());
+    }
   }
 
-  // 2. 刪除商品
+  // --- 4. 刪除商品 ---
   @DeleteMapping("/{id}")
-  public void deleteProduct(@PathVariable Long id) {
-    productRepository.deleteById(id);
+  public ResponseEntity<?> deleteProduct(@PathVariable Long id) {
+    try {
+      productRepository.deleteById(id);
+      return ResponseEntity.ok("Product deleted successfully");
+    } catch (Exception e) {
+      return ResponseEntity.status(404).body("Product not found");
+    }
   }
 
-  // 3. 更新商品 (選做)
+  // --- 5. 更新商品 ---
   @PutMapping("/{id}")
-  public Product updateProduct(@PathVariable Long id, @RequestBody Product productDetails) {
-    Product product = productRepository.findById(id).orElseThrow();
-    product.setName(productDetails.getName());
-    product.setPrice(productDetails.getPrice());
-    product.setDescription(productDetails.getDescription());
-    product.setImageUrl(productDetails.getImageUrl());
-    product.setCategory(productDetails.getCategory());
-    return productRepository.save(product);
+  public ResponseEntity<Product> updateProduct(@PathVariable Long id, @RequestBody Product productDetails) {
+    return productRepository.findById(id).map(product -> {
+      product.setName(productDetails.getName());
+      product.setPrice(productDetails.getPrice());
+      product.setDescription(productDetails.getDescription());
+      product.setImageUrl(productDetails.getImageUrl());
+      product.setCategory(productDetails.getCategory());
+      return ResponseEntity.ok(productRepository.save(product));
+    }).orElse(ResponseEntity.notFound().build());
   }
 
+  // --- 6. 圖片上傳 (選用) ---
   @PostMapping("/upload")
-  public String uploadImage(@RequestParam("file") MultipartFile file) throws IOException {
-    // 1. 定義儲存路徑 (這會在你專案根目錄建立一個 uploads 資料夾)
+  public ResponseEntity<String> uploadImage(@RequestParam("file") MultipartFile file) throws IOException {
     String uploadDir = "uploads/";
     Path uploadPath = Paths.get(uploadDir);
-
-    if (!Files.exists(uploadPath)) {
+    if (!Files.exists(uploadPath))
       Files.createDirectories(uploadPath);
-    }
 
-    // 2. 儲存檔案
     String fileName = System.currentTimeMillis() + "_" + file.getOriginalFilename();
     Path filePath = uploadPath.resolve(fileName);
     Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
 
-    // 3. 回傳圖片的訪問網址 (假設後端跑在 8080)
-    return "http://localhost:8080/uploads/" + fileName;
+    return ResponseEntity.ok("http://localhost:8080/uploads/" + fileName);
   }
-
 }
