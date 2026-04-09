@@ -1,9 +1,7 @@
-✅ Security: 集成 BCryptPasswordEncoder 實現密碼雜湊存儲。
+Modular Checkout Page: 獨立的結帳頁面，包含地址填寫與支付方式選擇。
 
-✅ Auth Flow: 實現真正的 Gmail SMTP 驗證碼 (OTP) 發送功能。
+User Profile Sidebar: 精緻的側邊欄個人資料管理，點擊即出。
 
-✅ UX/UI: 優化登入/註冊加載狀態 (Loading Spinner) 與 Remember Me 功能。
+Image Upload System: 實作了真實的檔案上傳與後端靜態資源映射（Static Resource Mapping）。
 
-✅ Robustness: 增加前端 Regex 校驗（Email 格式、強密碼要求）。
-
-✅ Flexible Login: 支持 Username 或 Email 雙向登入。
+Full-stack Data Flow: 打通了從資料庫 User 實體到前端 ProfileSidebar 的所有數據隧道。
