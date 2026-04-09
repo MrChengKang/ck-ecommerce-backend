@@ -16,6 +16,8 @@ public class Order {
   private Double totalAmount;
   private String status;
   private LocalDateTime orderDate;
+  private String shippingAddress;
+  private String paymentMethod;
 
   @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
   @JoinColumn(name = "order_id")
@@ -83,5 +85,21 @@ public class Order {
 
   public void setItems(List<OrderItem> items) {
     this.items = items;
+  }
+
+  public String getShippingAddress() {
+    return shippingAddress;
+  }
+
+  public void setShippingAddress(String shippingAddress) {
+    this.shippingAddress = shippingAddress;
+  }
+
+  public String getPaymentMethod() {
+    return paymentMethod;
+  }
+
+  public void setPaymentMethod(String paymentMethod) {
+    this.paymentMethod = paymentMethod;
   }
 }

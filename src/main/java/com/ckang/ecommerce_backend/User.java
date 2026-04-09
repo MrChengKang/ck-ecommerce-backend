@@ -20,8 +20,8 @@ public class User {
   private String email;
   private String address;
   private String role;
-
-  // --- 下面是 Getter 和 Setter (一定要有，不然 Repository 抓不到資料) ---
+  private String profilePic;
+  private String phoneNo;
 
   public Long getId() {
     return id;
@@ -69,5 +69,21 @@ public class User {
 
   public void setRole(String role) {
     this.role = role;
+  }
+
+  public String getPhoneNo() {
+    return phoneNo;
+  }
+
+  public void setPhoneNo(String phoneNo) {
+    this.phoneNo = phoneNo;
+  }
+
+  public String getProfilePic() {
+    return profilePic;
+  }
+
+  public void setProfilePic(String profilePic) {
+    this.profilePic = profilePic;
   }
 }
