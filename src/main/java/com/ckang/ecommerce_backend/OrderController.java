@@ -55,7 +55,7 @@ public class OrderController {
       }
 
       for (OrderItem item : order.getItems()) {
-        // 💡 確保 productId 不為 null
+
         if (item.getProductId() == null)
           continue;
 

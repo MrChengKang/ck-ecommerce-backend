@@ -38,11 +38,9 @@ public class AuthController {
   @PostMapping("/login")
   public ResponseEntity<?> login(@RequestBody LoginRequest req) {
     try {
-      // 這裡的 req.getUsername() 現在可能代表 Username，也可能是 Email
       String identifier = req.getUsername();
       System.out.println("--- 收到登入請求: " + identifier + " ---");
 
-      // 🔍 核心邏輯：先找 Username，找不到再找 Email
       return userRepository.findByUsername(identifier)
           .or(() -> userRepository.findAll().stream()
               .filter(u -> identifier.equalsIgnoreCase(u.getEmail()))
@@ -51,9 +49,12 @@ public class AuthController {
             if (passwordEncoder.matches(req.getPassword(), user.getPassword())) {
               String token = jwtUtils.generateToken(user.getUsername());
 
-              java.util.Map<String, String> response = new java.util.HashMap<>();
+              java.util.Map<String, Object> response = new java.util.HashMap<>();
               response.put("token", token);
               response.put("role", user.getRole() == null ? "USER" : user.getRole());
+              response.put("id", user.getId());
+              response.put("email", user.getEmail());
+              response.put("username", user.getUsername());
 
               System.out.println("✅ 登入成功: " + user.getUsername());
               return ResponseEntity.ok(response);
@@ -150,9 +151,7 @@ public class AuthController {
     String otp = req.get("otp");
     String newPassword = req.get("newPassword").trim();
 
-    // 1. 驗證 OTP 是否正確
     if (otpStorage.containsKey(email) && otpStorage.get(email).equals(otp)) {
-      // 2. 更新資料庫密碼
       return userRepository.findAll().stream()
           .filter(user -> user.getEmail() != null && email.equalsIgnoreCase(user.getEmail().trim()))
           .findFirst()
