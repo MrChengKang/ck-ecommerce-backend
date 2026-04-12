@@ -18,10 +18,6 @@ public class ProductController {
   @Autowired
   private ProductRepository productRepository;
 
-  // 🚨 修正：如果你有 ProductService 就注入它，如果沒有就直接用 Repository
-  // @Autowired
-  // private ProductService productService;
-
   // --- 1. 獲取所有商品 ---
   @GetMapping
   public List<Product> getAllProducts() {

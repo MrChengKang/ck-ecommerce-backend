@@ -3,8 +3,10 @@ package com.ckang.ecommerce_backend;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.io.IOException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -19,7 +21,9 @@ public class UserController {
   @Autowired
   private UserRepository userRepository;
 
-  // 💡 獲取單個用戶資料 (用於 Profile 頁面初始化)
+  @Autowired
+  private OrderRepository orderRepository;
+
   @GetMapping("/{id}")
   public ResponseEntity<?> getUserProfile(@PathVariable Long id) {
     return userRepository.findById(id)
@@ -66,14 +70,36 @@ public class UserController {
 
       // 4. 更新用戶資料庫裡的 profilePic 欄位 (存入 URL 路徑)
       User user = userRepository.findById(id).orElseThrow();
-      String fileUrl = "http://localhost:8080/uploads/" + savedFilename; // 前端讀取的 URL
+      String fileUrl = "http://localhost:8080/uploads/" + savedFilename;
       user.setProfilePic(fileUrl);
       userRepository.save(user);
 
-      return ResponseEntity.ok(Map.of("url", fileUrl)); // 把新 URL 回傳給前端
+      return ResponseEntity.ok(Map.of("url", fileUrl));
 
     } catch (IOException e) {
       return ResponseEntity.status(500).body("Upload failed: " + e.getMessage());
     }
+  }
+
+  @GetMapping
+  public ResponseEntity<?> getAllCustomers() {
+    List<User> users = userRepository.findByRole("USER");
+
+    List<CustomerDTO> dtos = users.stream().map(user -> {
+      CustomerDTO dto = new CustomerDTO();
+      dto.setId(user.getId());
+      dto.setUsername(user.getUsername());
+      dto.setEmail(user.getEmail());
+
+      Long count = orderRepository.countByCustomerEmail(user.getEmail());
+      Double spent = orderRepository.sumTotalAmountByCustomerEmail(user.getEmail());
+
+      dto.setTotalOrders(count != null ? count : 0L);
+      dto.setTotalSpent(spent != null ? spent : 0.0);
+
+      return dto;
+    }).collect(Collectors.toList());
+
+    return ResponseEntity.ok(dtos);
   }
 }
