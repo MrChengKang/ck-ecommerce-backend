@@ -5,6 +5,10 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -16,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -28,10 +33,10 @@ public class OrderController {
   @Autowired
   private ProductRepository productRepository;
 
-  @GetMapping
-  public List<Order> getAllOrders() {
-    return orderRepository.findAll();
-  }
+  // @GetMapping
+  // public List<Order> getAllOrders() {
+  // return orderRepository.findAll();
+  // }
 
   @PatchMapping("/{id}/status")
   public ResponseEntity<?> updateStatus(@PathVariable Long id, @RequestBody Map<String, String> statusMap) {
@@ -73,16 +78,12 @@ public class OrderController {
               .body("產品 [" + product.getName() + "] 庫存不足！(剩餘: " + product.getStockQuantity() + ")");
         }
 
-        // 💡 3. 執行扣除庫存
         product.setStockQuantity(product.getStockQuantity() - item.getQuantity());
 
-        // 💡 4. 存回產品表 (更新庫存)
         productRepository.save(product);
 
-        // 💡 修正點：確保使用正確的 Setter 名稱
         item.setPrice(product.getPrice() != null ? product.getPrice().doubleValue() : 0.0);
 
-        // 💡 修正點：處理可能的 null 值計算
         double price = (product.getPrice() != null)
             ? product.getPrice().doubleValue()
             : 0.0;
@@ -91,7 +92,6 @@ public class OrderController {
         realTotal += price * qty;
       }
 
-      // 💡 確保你的 Order.java 裡變數名是 totalAmount
       order.setTotalAmount(Double.valueOf(realTotal));
 
       order.setOrderNumber("CK" + System.currentTimeMillis());
@@ -130,4 +130,13 @@ public class OrderController {
           .body("Delete failed: " + e.getMessage());
     }
   }
+
+  @GetMapping
+  public ResponseEntity<Page<Order>> getOrders(
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "5") int size) {
+    Pageable pageable = PageRequest.of(page, size, Sort.by("orderDate").descending());
+    return ResponseEntity.ok(orderRepository.findAll(pageable));
+  }
+
 }

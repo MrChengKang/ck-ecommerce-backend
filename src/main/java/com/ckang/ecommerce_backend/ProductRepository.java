@@ -1,9 +1,17 @@
 package com.ckang.ecommerce_backend;
 
+import java.util.List;
+
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ProductRepository extends JpaRepository<Product, Long> {
-  // 這裡繼承了 JpaRepository，所以自動具備了「找全部」、「存檔」等功能
+  @Query(value = "SELECT DATE(created_at) as date, COUNT(id) as count " +
+      "FROM products " +
+      "WHERE created_at >= CURRENT_DATE - INTERVAL 6 DAY " +
+      "GROUP BY DATE(created_at) " +
+      "ORDER BY date ASC", nativeQuery = true)
+  List<Object[]> getDailyProductCount();
 }

@@ -3,6 +3,7 @@ package com.ckang.ecommerce_backend;
 import jakarta.persistence.*;
 import lombok.Data;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "products")
@@ -18,4 +19,6 @@ public class Product {
   private Integer stockQuantity;
   private String imageUrl;
   private String category;
+  @Column(name = "created_at")
+  private LocalDateTime createdAt = LocalDateTime.now();
 }
