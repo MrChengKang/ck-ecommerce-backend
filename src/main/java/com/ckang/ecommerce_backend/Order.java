@@ -16,6 +16,7 @@ public class Order {
   private String customerEmail;
   private Double totalAmount;
   private String status;
+  @Column(name = "order_date")
   private LocalDateTime orderDate;
   private String shippingAddress;
   private String paymentMethod;

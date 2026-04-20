@@ -1,28 +1,43 @@
 package com.ckang.ecommerce_backend;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param; // 💡 記得導這個
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import java.util.List;
+import java.time.LocalDate;
 
 @Repository
 public interface OrderRepository extends JpaRepository<Order, Long> {
 
-  // 💡 1. 根據 Email 統計訂單次數 (對應 Controller 的 countByCustomerEmail)
   Long countByCustomerEmail(String customerEmail);
 
-  // 💡 2. 根據 Email 統計總消費額 (對應 Controller 的 sumTotalAmountByCustomerEmail)
   @Query("SELECT SUM(o.totalAmount) FROM Order o WHERE o.customerEmail = :email")
   Double sumTotalAmountByCustomerEmail(@Param("email") String email);
 
-  // 💡 计算所有订单的总销售额
   @Query("SELECT SUM(o.totalAmount) FROM Order o WHERE o.status != 'CANCELLED'")
   Double getTotalRevenue();
 
-  // 💡 统计总订单数
   long count();
 
-  // 原有的根據 ID 查詢也可以保留
   List<Order> findByCustomerId(Long customerId);
+
+  @Query(value = "SELECT DATE(order_date) as date, SUM(total_amount) as amount " +
+      "FROM orders " +
+      "WHERE order_date >= CURRENT_DATE - INTERVAL 6 DAY " +
+      "GROUP BY DATE(order_date) " +
+      "ORDER BY date ASC", nativeQuery = true)
+  List<Object[]> getDailyRevenue();
+
+  @Query(value = "SELECT DATE(order_date) as date, COUNT(id) as count " +
+      "FROM orders " +
+      "WHERE order_date >= CURRENT_DATE - INTERVAL 6 DAY " +
+      "GROUP BY DATE(order_date) " +
+      "ORDER BY date ASC", nativeQuery = true)
+  List<Object[]> getDailyOrderCount();
+
+  Page<Order> findAll(Pageable pageable);
+
 }
