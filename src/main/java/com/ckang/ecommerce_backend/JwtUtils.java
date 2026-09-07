@@ -11,34 +11,45 @@ import java.util.Date;
 @Component
 public class JwtUtils {
 
-  // 建議將 Secret 抽出來
   private final String jwtSecret = "ckStoreSecretKey_MustBeAtLeast32CharactersLong!!_2024";
 
-  // 🚨 這裡直接改為 1000 * 10 (10秒)，方便測試
+  // 設定 Token 過期時間為 24 小時 (24 * 60 * 60 * 1000 ms)
   private final int jwtExpirationMs = 1000 * 60 * 60 * 24;
 
-  public String generateToken(String username) {
-    Key key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+  private Key getSigningKey() {
+    return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+  }
 
+  // 1. 生成 Token
+  public String generateToken(String username) {
     return Jwts.builder()
         .setSubject(username)
         .setIssuedAt(new Date())
-        // 🚨 這裡必須使用 jwtExpirationMs，或是你剛才定義的 expirationTime
         .setExpiration(new Date(System.currentTimeMillis() + jwtExpirationMs))
-        .signWith(key, SignatureAlgorithm.HS256)
+        .signWith(getSigningKey(), SignatureAlgorithm.HS256)
         .compact();
   }
 
-  // 💡 建議加上這個方法，讓後端真的去校驗過期
+  // 2. 💡 【新增這個方法】從 Token 中解析出 Username (解決紅字報錯)
+  public String getUsernameFromToken(String token) {
+    return Jwts.parserBuilder()
+        .setSigningKey(getSigningKey())
+        .build()
+        .parseClaimsJws(token)
+        .getBody()
+        .getSubject();
+  }
+
+  // 3. 驗證 Token 是否有效/未過期
   public boolean validateToken(String token) {
     try {
-      Key key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
-      Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token);
+      Jwts.parserBuilder().setSigningKey(getSigningKey()).build().parseClaimsJws(token);
       return true;
     } catch (ExpiredJwtException e) {
       System.out.println("--- TOKEN EXPIRED ---");
       return false;
     } catch (Exception e) {
+      System.out.println("--- INVALID TOKEN ---");
       return false;
     }
   }
