@@ -4,7 +4,7 @@ import jakarta.persistence.*; // 如果你是 Spring Boot 3
 // import javax.persistence.*; // 如果你是 Spring Boot 2
 
 @Entity
-@Table(name = "users") // 👈 對應你 MySQL 裡的表名
+@Table(name = "users")
 public class User {
 
   @Id
