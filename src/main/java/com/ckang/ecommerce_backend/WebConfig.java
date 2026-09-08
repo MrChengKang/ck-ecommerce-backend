@@ -12,7 +12,6 @@ public class WebConfig implements WebMvcConfigurer {
 
   @Override
   public void addResourceHandlers(ResourceHandlerRegistry registry) {
-
     Path uploadDir = Paths.get("uploads");
     String uploadPath = uploadDir.toFile().getAbsolutePath();
 
@@ -22,9 +21,8 @@ public class WebConfig implements WebMvcConfigurer {
 
   @Override
   public void addCorsMappings(CorsRegistry registry) {
-
     registry.addMapping("/**")
-        .allowedOrigins(
+        .allowedOriginPatterns(
             "http://localhost:5173",
             "https://ck-ecommerce-frontend.vercel.app")
         .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
