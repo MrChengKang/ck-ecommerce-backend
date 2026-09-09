@@ -52,7 +52,7 @@ public class SecurityConfig {
 
     configuration.setAllowedOriginPatterns(List.of(
         "http://localhost:5173",
-        "https://ck-ecommerce-frontend.vercel.app/"));
+        "https://*.vercel.app"));
 
     configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
     configuration.setAllowedHeaders(Arrays.asList("*"));
