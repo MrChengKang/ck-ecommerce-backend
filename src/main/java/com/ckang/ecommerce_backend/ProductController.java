@@ -11,7 +11,6 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/products")
-// 💡 已移除 @CrossOrigin，統一交由 SecurityConfig 全域控制 CORS
 public class ProductController {
 
   @Autowired
@@ -54,7 +53,7 @@ public class ProductController {
     }
   }
 
-  // --- 5. 更新商品 ---
+  // --- 5. 更新完整商品（修復：補上 stockQuantity） ---
   @PutMapping("/{id}")
   public ResponseEntity<Product> updateProduct(@PathVariable Long id, @RequestBody Product productDetails) {
     return productRepository.findById(id).map(product -> {
@@ -63,7 +62,21 @@ public class ProductController {
       product.setDescription(productDetails.getDescription());
       product.setImageUrl(productDetails.getImageUrl());
       product.setCategory(productDetails.getCategory());
+      product.setStockQuantity(productDetails.getStockQuantity()); // 👈 💡 關鍵修復：這裡補上庫存更新！
       return ResponseEntity.ok(productRepository.save(product));
+    }).orElse(ResponseEntity.notFound().build());
+  }
+
+  // --- 5.5 新增：單獨快速更新庫存 API (PATCH) ---
+  @PatchMapping("/{id}/stock")
+  public ResponseEntity<?> updateStockOnly(@PathVariable Long id, @RequestBody Map<String, Integer> payload) {
+    return productRepository.findById(id).map(product -> {
+      if (payload.containsKey("stockQuantity")) {
+        product.setStockQuantity(payload.get("stockQuantity"));
+        productRepository.save(product);
+        return ResponseEntity.ok(product);
+      }
+      return ResponseEntity.badRequest().body("Field 'stockQuantity' is missing");
     }).orElse(ResponseEntity.notFound().build());
   }
 

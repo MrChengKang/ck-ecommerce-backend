@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.transaction.annotation.Transactional;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -53,13 +54,14 @@ public class OrderController {
     return ResponseEntity.ok("Status updated");
   }
 
+  @Transactional
   @PostMapping("/checkout")
   public ResponseEntity<?> checkout(@RequestBody Order order) {
     try {
       double realTotal = 0.0;
 
       if (order.getItems() == null || order.getItems().isEmpty()) {
-        return ResponseEntity.badRequest().body("購物車是空的");
+        return ResponseEntity.badRequest().body("cart is empty");
       }
 
       for (OrderItem item : order.getItems()) {
@@ -68,14 +70,14 @@ public class OrderController {
           continue;
 
         Product product = productRepository.findById(item.getProductId())
-            .orElseThrow(() -> new RuntimeException("產品不存在 ID: " + item.getProductId()));
+            .orElseThrow(() -> new RuntimeException("Product not found with ID: " + item.getProductId()));
 
-        System.out.println("產品: " + product.getName() + " | 資料庫庫存: " + product.getStockQuantity() + " | 訂單要求數量: "
+        System.out.println("Product: " + product.getName() + " | Database Stock: " + product.getStockQuantity() + " | Order Quantity: "
             + item.getQuantity());
 
         if (product.getStockQuantity() < item.getQuantity()) {
           return ResponseEntity.badRequest()
-              .body("產品 [" + product.getName() + "] 庫存不足！(剩餘: " + product.getStockQuantity() + ")");
+              .body("Product [" + product.getName() + "] has insufficient stock! (Available: " + product.getStockQuantity() + ")");
         }
 
         product.setStockQuantity(product.getStockQuantity() - item.getQuantity());
@@ -103,7 +105,7 @@ public class OrderController {
 
     } catch (Exception e) {
       e.printStackTrace();
-      return ResponseEntity.status(500).body("訂單處理失敗: " + e.getMessage());
+      throw new RuntimeException("Order checkout failed: " + e.getMessage());
     }
   }
 
