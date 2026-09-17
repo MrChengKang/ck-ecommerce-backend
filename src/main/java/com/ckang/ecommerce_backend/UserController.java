@@ -3,11 +3,13 @@ package com.ckang.ecommerce_backend;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.io.File;
 import java.io.IOException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -15,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 @RestController
 @RequestMapping("/api/users")
@@ -27,21 +30,21 @@ public class UserController {
   @Autowired
   private OrderRepository orderRepository;
 
+  @Autowired
+  private PasswordEncoder passwordEncoder;
+
   @GetMapping("/me")
   public ResponseEntity<?> getCurrentUser(Authentication authentication) {
     if (authentication == null || authentication.getName() == null) {
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Unauthorized");
     }
 
-    // authentication.getName() 會拿 JwtAuthenticationFilter 傳進去的 username (或 email)
     String identifier = authentication.getName();
 
-    // 根據你的 UserRepository 查詢方式 (可以用 findByUsername 或 findByEmail)
     Optional<User> userOpt = userRepository.findByUsername(identifier);
 
     if (userOpt.isPresent()) {
       User user = userOpt.get();
-      // 安全起見，清空密碼再回傳
       user.setPassword(null);
       return ResponseEntity.ok(user);
     } else {
@@ -60,13 +63,18 @@ public class UserController {
 
     String identifier = authentication.getName();
 
-    // 尋找當前登入使用者
     Optional<User> userOpt = userRepository.findByUsername(identifier);
 
     if (userOpt.isPresent()) {
       User existingUser = userOpt.get();
 
-      // 💡 兼容前端可能傳過來的不同 Key (phoneNo, contactNumber, phone)
+      // 💡 加上 username 的更新判斷（兼顧 name 欄位）
+      if (updates.containsKey("username") && updates.get("username") != null) {
+        existingUser.setUsername((String) updates.get("username"));
+      } else if (updates.containsKey("name") && updates.get("name") != null) {
+        existingUser.setUsername((String) updates.get("name"));
+      }
+
       if (updates.containsKey("phoneNo") && updates.get("phoneNo") != null) {
         existingUser.setPhoneNo((String) updates.get("phoneNo"));
       } else if (updates.containsKey("contactNumber") && updates.get("contactNumber") != null) {
@@ -75,7 +83,6 @@ public class UserController {
         existingUser.setPhoneNo((String) updates.get("phone"));
       }
 
-      // 💡 其它欄位更新
       if (updates.containsKey("address") && updates.get("address") != null) {
         existingUser.setAddress((String) updates.get("address"));
       }
@@ -86,9 +93,8 @@ public class UserController {
         existingUser.setProfilePic((String) updates.get("profilePic"));
       }
 
-      // 儲存至資料庫
       User savedUser = userRepository.save(existingUser);
-      savedUser.setPassword(null); // 清除密碼敏感資訊
+      savedUser.setPassword(null);
 
       return ResponseEntity.ok(savedUser);
     } else {
@@ -99,15 +105,26 @@ public class UserController {
   @PostMapping("/me/upload-avatar")
   public ResponseEntity<?> uploadAvatar(Authentication authentication, @RequestParam("file") MultipartFile file) {
     if (authentication == null || !authentication.isAuthenticated()) {
-      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("未登入");
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Unauthorized");
     }
 
-    if (file.isEmpty()) {
+    if (file == null || file.isEmpty()) {
       return ResponseEntity.badRequest().body("File is empty");
     }
 
     try {
-      Path uploadDir = Paths.get("./uploads");
+      String identifier = authentication.getName();
+      System.out.println(">>> Auth User: " + identifier);
+      System.out.println(">>> File received: " + file.getOriginalFilename());
+
+      User user = userRepository.findByUsername(identifier)
+          .orElseGet(() -> userRepository.findByEmail(identifier).orElse(null));
+
+      if (user == null) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found: " + identifier);
+      }
+
+      Path uploadDir = Paths.get("./uploads").toAbsolutePath().normalize();
       if (!Files.exists(uploadDir)) {
         Files.createDirectories(uploadDir);
       }
@@ -119,21 +136,21 @@ public class UserController {
       }
 
       String savedFilename = UUID.randomUUID().toString() + extension;
-      Path filePath = uploadDir.resolve(savedFilename);
-      Files.copy(file.getInputStream(), filePath);
+      Path targetPath = uploadDir.resolve(savedFilename);
 
-      String currentUserIdentifier = authentication.getName();
-      User user = userRepository.findByEmail(currentUserIdentifier)
-          .orElseThrow(() -> new RuntimeException("User not found"));
+      Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
 
-      String fileUrl = "http://localhost:8080/uploads/" + savedFilename;
+      String fileUrl = "/uploads/" + savedFilename;
       user.setProfilePic(fileUrl);
       userRepository.save(user);
 
+      System.out.println(">>> Saved successfully at: " + fileUrl);
       return ResponseEntity.ok(Map.of("url", fileUrl));
 
-    } catch (IOException e) {
-      return ResponseEntity.status(500).body("Upload failed: " + e.getMessage());
+    } catch (Throwable e) {
+      e.printStackTrace();
+      return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+          .body("Upload error: " + e.getMessage());
     }
   }
 
@@ -157,5 +174,41 @@ public class UserController {
     }).collect(Collectors.toList());
 
     return ResponseEntity.ok(dtos);
+  }
+
+  @PutMapping("/me/password")
+  public ResponseEntity<?> changePassword(
+      Authentication authentication,
+      @RequestBody Map<String, String> requestBody) {
+
+    if (authentication == null || !authentication.isAuthenticated()) {
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Unauthorized");
+    }
+
+    String currentPassword = requestBody.get("currentPassword");
+    String newPassword = requestBody.get("newPassword");
+
+    if (currentPassword == null || newPassword == null || newPassword.trim().isEmpty()) {
+      return ResponseEntity.badRequest().body("Passwords cannot be empty");
+    }
+
+    String identifier = authentication.getName();
+    User user = userRepository.findByUsername(identifier)
+        .orElseGet(() -> userRepository.findByEmail(identifier).orElse(null));
+
+    if (user == null) {
+      return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found");
+    }
+
+    // 1. 驗證舊密碼是否正確
+    if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+      return ResponseEntity.badRequest().body("Current password incorrect");
+    }
+
+    // 2. 加密新密碼並存檔
+    user.setPassword(passwordEncoder.encode(newPassword));
+    userRepository.save(user);
+
+    return ResponseEntity.ok(Map.of("message", "Password changed successfully"));
   }
 }

@@ -4,11 +4,13 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.security.core.Authentication;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.jaxb.SpringDataJaxb.OrderDto;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -28,11 +30,15 @@ import org.springframework.transaction.annotation.Transactional;
 @RequestMapping("/api/orders")
 @CrossOrigin(origins = "http://localhost:5173")
 public class OrderController {
+
   @Autowired
   private OrderRepository orderRepository;
 
   @Autowired
   private ProductRepository productRepository;
+
+  @Autowired
+  private UserRepository userRepository;
 
   // @GetMapping
   // public List<Order> getAllOrders() {
@@ -72,12 +78,14 @@ public class OrderController {
         Product product = productRepository.findById(item.getProductId())
             .orElseThrow(() -> new RuntimeException("Product not found with ID: " + item.getProductId()));
 
-        System.out.println("Product: " + product.getName() + " | Database Stock: " + product.getStockQuantity() + " | Order Quantity: "
-            + item.getQuantity());
+        System.out.println(
+            "Product: " + product.getName() + " | Database Stock: " + product.getStockQuantity() + " | Order Quantity: "
+                + item.getQuantity());
 
         if (product.getStockQuantity() < item.getQuantity()) {
           return ResponseEntity.badRequest()
-              .body("Product [" + product.getName() + "] has insufficient stock! (Available: " + product.getStockQuantity() + ")");
+              .body("Product [" + product.getName() + "] has insufficient stock! (Available: "
+                  + product.getStockQuantity() + ")");
         }
 
         product.setStockQuantity(product.getStockQuantity() - item.getQuantity());
@@ -139,6 +147,20 @@ public class OrderController {
       @RequestParam(defaultValue = "5") int size) {
     Pageable pageable = PageRequest.of(page, size, Sort.by("orderDate").descending());
     return ResponseEntity.ok(orderRepository.findAll(pageable));
+  }
+
+  @GetMapping("/my-orders")
+  public ResponseEntity<List<Order>> getMyOrders(Authentication authentication) {
+    if (authentication == null) {
+      return ResponseEntity.status(401).build();
+    }
+    String username = authentication.getName();
+
+    User user = userRepository.findByUsername(username)
+        .orElseThrow(() -> new RuntimeException("User not found"));
+
+    List<Order> orders = orderRepository.findByCustomerEmail(user.getEmail());
+    return ResponseEntity.ok(orders);
   }
 
 }
