@@ -1,7 +1,6 @@
 package com.ckang.ecommerce_backend;
 
-import jakarta.persistence.*; // 如果你是 Spring Boot 3
-// import javax.persistence.*; // 如果你是 Spring Boot 2
+import jakarta.persistence.*;
 
 @Entity
 @Table(name = "users")
