@@ -13,14 +13,12 @@ public class JwtUtils {
 
   private final String jwtSecret = "ckStoreSecretKey_MustBeAtLeast32CharactersLong!!_2024";
 
-  // 設定 Token 過期時間為 24 小時 (24 * 60 * 60 * 1000 ms)
   private final int jwtExpirationMs = 1000 * 60 * 60 * 24;
 
   private Key getSigningKey() {
     return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
   }
 
-  // 1. 生成 Token
   public String generateToken(String username) {
     return Jwts.builder()
         .setSubject(username)
@@ -30,7 +28,6 @@ public class JwtUtils {
         .compact();
   }
 
-  // 2. 💡 【新增這個方法】從 Token 中解析出 Username (解決紅字報錯)
   public String getUsernameFromToken(String token) {
     return Jwts.parserBuilder()
         .setSigningKey(getSigningKey())
@@ -40,7 +37,6 @@ public class JwtUtils {
         .getSubject();
   }
 
-  // 3. 驗證 Token 是否有效/未過期
   public boolean validateToken(String token) {
     try {
       Jwts.parserBuilder().setSigningKey(getSigningKey()).build().parseClaimsJws(token);
