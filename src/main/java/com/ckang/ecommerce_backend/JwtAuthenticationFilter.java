@@ -10,9 +10,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import java.util.List;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.io.IOException;
-import java.util.Collections;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -20,17 +21,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
   @Autowired
   private JwtUtils jwtUtils;
 
+  @Autowired
+  private UserRepository userRepository;
+
   @Override
   protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
       throws ServletException, IOException {
 
-    // 1. 從 Request Header 取得 Authorization
     String authHeader = request.getHeader("Authorization");
 
     String username = null;
     String jwtToken = null;
 
-    // 2. 檢查是否有 Bearer 前綴，並提取 Token
     if (authHeader != null && authHeader.startsWith("Bearer ")) {
       jwtToken = authHeader.substring(7);
       try {
@@ -40,23 +42,25 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
       }
     }
 
-    // 3. 驗證 Token 並設置 SecurityContext
     if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-      // 驗證 Token 是否有效
       if (jwtUtils.validateToken(jwtToken)) {
 
-        // 建立 Authentication 物件 (此處可根據你專案的需求帶入 Role/Authority)
-        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-            username, null, Collections.emptyList());
+        User user = userRepository.findByUsername(username).orElse(null);
 
-        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+        if (user != null && user.getRole() != null) {
+          var authority = new SimpleGrantedAuthority("ROLE_" + user.getRole());
 
-        // 標記為已登入狀態
-        SecurityContextHolder.getContext().setAuthentication(authentication);
+          UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+              user.getUsername(), null, List.of(authority));
+
+          authentication.setDetails(
+              new WebAuthenticationDetailsSource().buildDetails(request));
+
+          SecurityContextHolder.getContext().setAuthentication(authentication);
+        }
       }
     }
 
-    // 4. 繼續執行下一個 Filter 或 Controller
     filterChain.doFilter(request, response);
   }
 }

@@ -3,7 +3,7 @@ package com.ckang.ecommerce_backend;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Component;
-
+import org.springframework.beans.factory.annotation.Value;
 import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.util.Date;
@@ -11,7 +11,8 @@ import java.util.Date;
 @Component
 public class JwtUtils {
 
-  private final String jwtSecret = "ckStoreSecretKey_MustBeAtLeast32CharactersLong!!_2024";
+  @Value("${jwt.secret}")
+  private String jwtSecret;
 
   private final int jwtExpirationMs = 1000 * 60 * 60 * 24;
 

@@ -35,11 +35,31 @@ public class SecurityConfig {
 
         .authorizeHttpRequests(auth -> auth
             .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-            .requestMatchers("/api/auth/**").permitAll()
-            .requestMatchers("/api/products/**").permitAll()
-            .requestMatchers("/uploads/**").permitAll()
-            .requestMatchers("/api/users/me").authenticated()
-            .anyRequest().permitAll())
+
+            .requestMatchers(
+                "/api/auth/login",
+                "/api/auth/register",
+                "/api/auth/forgot-password",
+                "/api/auth/reset-password")
+            .permitAll()
+            .requestMatchers(HttpMethod.GET, "/api/products/**", "/api/categories/**").permitAll()
+            .requestMatchers(HttpMethod.GET, "/uploads/**").permitAll()
+
+            .requestMatchers("/api/admin/**").hasRole("ADMIN")
+            .requestMatchers("/api/users").hasRole("ADMIN")
+            .requestMatchers(HttpMethod.POST, "/api/products/**", "/api/categories/**").hasRole("ADMIN")
+            .requestMatchers(HttpMethod.PUT, "/api/products/**", "/api/categories/**").hasRole("ADMIN")
+            .requestMatchers(HttpMethod.PATCH, "/api/products/**", "/api/categories/**").hasRole("ADMIN")
+            .requestMatchers(HttpMethod.DELETE, "/api/products/**", "/api/categories/**").hasRole("ADMIN")
+
+            .requestMatchers("/api/orders/my-orders").authenticated()
+            .requestMatchers(HttpMethod.POST, "/api/orders/checkout").authenticated()
+            .requestMatchers("/api/orders/**").hasRole("ADMIN")
+
+            .requestMatchers("/api/users/me/**").authenticated()
+            .requestMatchers("/api/wishlist/**").authenticated()
+
+            .anyRequest().denyAll())
 
         .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
@@ -54,7 +74,7 @@ public class SecurityConfig {
         "http://localhost:5173",
         "https://*.vercel.app"));
 
-    configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+    configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     configuration.setAllowedHeaders(Arrays.asList("*"));
     configuration.setAllowCredentials(true);
 
