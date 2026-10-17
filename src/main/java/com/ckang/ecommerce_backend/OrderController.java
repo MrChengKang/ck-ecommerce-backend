@@ -3,6 +3,11 @@ package com.ckang.ecommerce_backend;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.HashMap;
+import java.util.Set;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,15 +50,22 @@ public class OrderController {
   // return orderRepository.findAll();
   // }
 
-  @PatchMapping("/{id}/status")
-  public ResponseEntity<?> updateStatus(@PathVariable Long id, @RequestBody Map<String, String> statusMap) {
-    Order order = orderRepository.findById(id).orElse(null);
-    if (order == null)
-      return ResponseEntity.notFound().build();
+  private static final Set<String> ALLOWED_STATUSES = Set.of("Pending", "Shipped", "Completed", "Cancelled");
 
-    String newStatus = statusMap.get("status");
-    if (newStatus == null)
-      return ResponseEntity.badRequest().body("Status is required");
+  @PatchMapping("/{id}/status")
+  public ResponseEntity<?> updateStatus(
+      @PathVariable Long id,
+      @RequestBody Map<String, String> payload) {
+    String newStatus = payload.get("status");
+
+    if (!ALLOWED_STATUSES.contains(newStatus)) {
+      return ResponseEntity.badRequest().body("Invalid order status");
+    }
+
+    Order order = orderRepository.findById(id).orElse(null);
+    if (order == null) {
+      return ResponseEntity.notFound().build();
+    }
 
     order.setStatus(newStatus);
     orderRepository.save(order);
@@ -62,59 +74,96 @@ public class OrderController {
 
   @Transactional
   @PostMapping("/checkout")
-  public ResponseEntity<?> checkout(@RequestBody Order order) {
-    try {
-      double realTotal = 0.0;
-
-      if (order.getItems() == null || order.getItems().isEmpty()) {
-        return ResponseEntity.badRequest().body("cart is empty");
-      }
-
-      for (OrderItem item : order.getItems()) {
-
-        if (item.getProductId() == null)
-          continue;
-
-        Product product = productRepository.findById(item.getProductId())
-            .orElseThrow(() -> new RuntimeException("Product not found with ID: " + item.getProductId()));
-
-        System.out.println(
-            "Product: " + product.getName() + " | Database Stock: " + product.getStockQuantity() + " | Order Quantity: "
-                + item.getQuantity());
-
-        if (product.getStockQuantity() < item.getQuantity()) {
-          return ResponseEntity.badRequest()
-              .body("Product [" + product.getName() + "] has insufficient stock! (Available: "
-                  + product.getStockQuantity() + ")");
-        }
-
-        product.setStockQuantity(product.getStockQuantity() - item.getQuantity());
-
-        productRepository.save(product);
-
-        item.setPrice(product.getPrice() != null ? product.getPrice().doubleValue() : 0.0);
-
-        double price = (product.getPrice() != null)
-            ? product.getPrice().doubleValue()
-            : 0.0;
-        int qty = (item.getQuantity() != null) ? item.getQuantity() : 0;
-
-        realTotal += price * qty;
-      }
-
-      order.setTotalAmount(Double.valueOf(realTotal));
-
-      order.setOrderNumber("CK" + System.currentTimeMillis());
-      order.setOrderDate(LocalDateTime.now());
-      order.setStatus("Pending");
-
-      Order savedOrder = orderRepository.save(order);
-      return ResponseEntity.ok(savedOrder);
-
-    } catch (Exception e) {
-      e.printStackTrace();
-      throw new RuntimeException("Order checkout failed: " + e.getMessage());
+  public ResponseEntity<?> checkout(
+      @RequestBody CheckoutRequest request,
+      Authentication authentication) {
+    if (authentication == null || request.items() == null || request.items().isEmpty()) {
+      return ResponseEntity.badRequest().body("Cart is empty or user is not authenticated");
     }
+
+    User user = userRepository.findByUsername(authentication.getName())
+        .orElse(null);
+
+    if (user == null) {
+      return ResponseEntity.status(401).body("User not found");
+    }
+
+    Map<Long, Integer> quantityByProduct = new LinkedHashMap<>();
+
+    for (CheckoutItemRequest item : request.items()) {
+      if (item == null || item.productId() == null ||
+          item.quantity() == null || item.quantity() <= 0) {
+        return ResponseEntity.badRequest().body("Invalid product or quantity");
+      }
+
+      long combined = (long) quantityByProduct.getOrDefault(item.productId(), 0)
+          + item.quantity();
+
+      if (combined > Integer.MAX_VALUE) {
+        return ResponseEntity.badRequest().body("Quantity is too large");
+      }
+
+      quantityByProduct.put(item.productId(), (int) combined);
+    }
+
+    Map<Long, Product> products = new HashMap<>();
+
+    for (Long productId : quantityByProduct.keySet()) {
+      Product product = productRepository.findById(productId).orElse(null);
+
+      if (product == null) {
+        return ResponseEntity.badRequest().body("Product not found: " + productId);
+      }
+
+      int quantity = quantityByProduct.get(productId);
+      if (product.getStockQuantity() == null ||
+          product.getStockQuantity() < quantity) {
+        return ResponseEntity.badRequest().body(
+            "Insufficient stock for product: " + product.getName());
+      }
+
+      if (product.getPrice() == null) {
+        return ResponseEntity.badRequest().body(
+            "Product has no valid price: " + product.getName());
+      }
+
+      products.put(productId, product);
+    }
+
+    Order order = new Order();
+    order.setCustomerId(user.getId());
+    order.setCustomerEmail(user.getEmail());
+    order.setCustomerName(request.customerName());
+    order.setShippingAddress(request.shippingAddress());
+    order.setPaymentMethod(request.paymentMethod());
+    order.setOrderNumber("CK" + java.util.UUID.randomUUID());
+    order.setOrderDate(LocalDateTime.now());
+    order.setStatus("Pending");
+
+    BigDecimal total = BigDecimal.ZERO;
+    List<OrderItem> orderItems = new ArrayList<>();
+
+    for (Map.Entry<Long, Integer> entry : quantityByProduct.entrySet()) {
+      Product product = products.get(entry.getKey());
+      int quantity = entry.getValue();
+
+      product.setStockQuantity(product.getStockQuantity() - quantity);
+
+      OrderItem orderItem = new OrderItem();
+      orderItem.setProductId(product.getId());
+      orderItem.setProductName(product.getName());
+      orderItem.setPrice(product.getPrice().doubleValue());
+      orderItem.setQuantity(quantity);
+      orderItem.setImageUrl(product.getImageUrl());
+      orderItems.add(orderItem);
+
+      total = total.add(product.getPrice().multiply(BigDecimal.valueOf(quantity)));
+    }
+
+    order.setItems(orderItems);
+    order.setTotalAmount(total.doubleValue());
+
+    return ResponseEntity.ok(orderRepository.save(order));
   }
 
   @PutMapping("/{id}/status")
@@ -154,13 +203,15 @@ public class OrderController {
     if (authentication == null) {
       return ResponseEntity.status(401).build();
     }
-    String username = authentication.getName();
 
-    User user = userRepository.findByUsername(username)
-        .orElseThrow(() -> new RuntimeException("User not found"));
+    User user = userRepository.findByUsername(authentication.getName())
+        .orElse(null);
 
-    List<Order> orders = orderRepository.findByCustomerEmail(user.getEmail());
-    return ResponseEntity.ok(orders);
+    if (user == null) {
+      return ResponseEntity.status(401).build();
+    }
+
+    return ResponseEntity.ok(orderRepository.findByCustomerId(user.getId()));
   }
 
 }
