@@ -8,7 +8,13 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.HashMap;
 import java.util.Set;
+import java.util.HexFormat;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.security.core.Authentication;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -26,6 +32,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +50,11 @@ public class OrderController {
 
   @Autowired
   private UserRepository userRepository;
+
+  @Autowired
+  private CheckoutIdempotencyRepository checkoutIdempotencyRepository;
+
+  private final ObjectMapper objectMapper = new ObjectMapper();
 
   // @GetMapping
   // public List<Order> getAllOrders() {
@@ -205,6 +217,7 @@ public class OrderController {
   @PostMapping("/checkout")
   public ResponseEntity<?> checkout(
       @RequestBody CheckoutRequest request,
+      @RequestHeader(value = "Idempotency-Key", required = false) String rawIdempotencyKey,
       Authentication authentication) {
     if (authentication == null ||
         request == null ||
@@ -220,6 +233,12 @@ public class OrderController {
     if (user == null) {
       return ResponseEntity.status(401).body("User not found");
     }
+
+    String idempotencyKey = rawIdempotencyKey == null ? "" : rawIdempotencyKey.trim();
+    if (!idempotencyKey.matches("(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")) {
+      return ResponseEntity.badRequest().body("A valid Idempotency-Key UUID is required");
+    }
+    idempotencyKey = idempotencyKey.toLowerCase(java.util.Locale.ROOT);
 
     Map<Long, Integer> quantityByProduct = new LinkedHashMap<>();
 
@@ -237,6 +256,35 @@ public class OrderController {
       }
 
       quantityByProduct.put(item.productId(), (int) combined);
+    }
+
+    String requestHash;
+    try {
+      requestHash = hashCheckoutRequest(request, quantityByProduct);
+    } catch (JsonProcessingException e) {
+      return ResponseEntity.internalServerError().body("Could not validate checkout request");
+    }
+
+    // The MySQL upsert serializes concurrent requests using the same customer/key pair.
+    checkoutIdempotencyRepository.reserveKey(user.getId(), idempotencyKey, requestHash);
+    CheckoutIdempotency checkoutRecord = checkoutIdempotencyRepository
+        .findForUpdate(user.getId(), idempotencyKey)
+        .orElseThrow(() -> new IllegalStateException("Checkout idempotency record was not created"));
+
+    if (!checkoutRecord.getRequestHash().equals(requestHash)) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body("Idempotency-Key was already used for a different checkout request");
+    }
+
+    if (checkoutRecord.getOrderId() != null) {
+      // Use a locking/current read so a retry can see the order committed by the
+      // request that held this idempotency key immediately before it.
+      Order existingOrder = orderRepository.findByIdForUpdate(checkoutRecord.getOrderId()).orElse(null);
+      if (existingOrder == null) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body("The order for this checkout key no longer exists");
+      }
+      return ResponseEntity.ok(existingOrder);
     }
 
     Map<Long, Product> products = new HashMap<>();
@@ -301,7 +349,31 @@ public class OrderController {
     order.setItems(orderItems);
     order.setTotalAmount(total.doubleValue());
 
-    return ResponseEntity.ok(orderRepository.save(order));
+    Order savedOrder = orderRepository.saveAndFlush(order);
+    checkoutRecord.setOrderId(savedOrder.getId());
+    checkoutIdempotencyRepository.save(checkoutRecord);
+    return ResponseEntity.ok(savedOrder);
+  }
+
+  private String hashCheckoutRequest(
+      CheckoutRequest request,
+      Map<Long, Integer> quantityByProduct) throws JsonProcessingException {
+    Map<String, Object> canonicalRequest = new LinkedHashMap<>();
+    canonicalRequest.put("customerName", request.customerName());
+    canonicalRequest.put("shippingAddress", request.shippingAddress());
+    canonicalRequest.put("paymentMethod", request.paymentMethod());
+    canonicalRequest.put("items", quantityByProduct.entrySet().stream()
+        .sorted(Map.Entry.comparingByKey())
+        .map(entry -> List.of(entry.getKey(), entry.getValue()))
+        .toList());
+
+    try {
+      byte[] digest = MessageDigest.getInstance("SHA-256")
+          .digest(objectMapper.writeValueAsBytes(canonicalRequest));
+      return HexFormat.of().formatHex(digest);
+    } catch (NoSuchAlgorithmException e) {
+      throw new IllegalStateException("SHA-256 is unavailable", e);
+    }
   }
 
   @Transactional

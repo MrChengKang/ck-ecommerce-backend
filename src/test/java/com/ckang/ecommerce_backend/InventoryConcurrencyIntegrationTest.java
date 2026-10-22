@@ -9,6 +9,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -91,8 +92,10 @@ class InventoryConcurrencyIntegrationTest {
     CountDownLatch ready = new CountDownLatch(2);
     CountDownLatch start = new CountDownLatch(1);
     try (ExecutorService workers = Executors.newFixedThreadPool(2)) {
-      Future<ResponseEntity<?>> first = workers.submit(() -> checkoutTogether(request, ready, start));
-      Future<ResponseEntity<?>> second = workers.submit(() -> checkoutTogether(request, ready, start));
+      Future<ResponseEntity<?>> first = workers.submit(
+          () -> checkoutTogether(request, ready, start, UUID.randomUUID().toString()));
+      Future<ResponseEntity<?>> second = workers.submit(
+          () -> checkoutTogether(request, ready, start, UUID.randomUUID().toString()));
 
       assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
       start.countDown();
@@ -111,14 +114,74 @@ class InventoryConcurrencyIntegrationTest {
     assertThat(orderRepository.count()).isEqualTo(1);
   }
 
+  @Test
+  void simultaneousRetriesWithSameKeyReturnOneOrderAndDeductStockOnce() throws Exception {
+    CheckoutRequest request = new CheckoutRequest(
+        "Idempotency Test",
+        "Test address",
+        "TEST",
+        List.of(new CheckoutItemRequest(product.getId(), 1)));
+    String idempotencyKey = UUID.randomUUID().toString();
+
+    CountDownLatch ready = new CountDownLatch(2);
+    CountDownLatch start = new CountDownLatch(1);
+    try (ExecutorService workers = Executors.newFixedThreadPool(2)) {
+      Future<ResponseEntity<?>> first = workers.submit(
+          () -> checkoutTogether(request, ready, start, idempotencyKey));
+      Future<ResponseEntity<?>> second = workers.submit(
+          () -> checkoutTogether(request, ready, start, idempotencyKey));
+
+      assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+      start.countDown();
+
+      ResponseEntity<?> firstResponse = first.get(30, TimeUnit.SECONDS);
+      ResponseEntity<?> secondResponse = second.get(30, TimeUnit.SECONDS);
+      assertThat(firstResponse.getStatusCode().value()).isEqualTo(200);
+      assertThat(secondResponse.getStatusCode().value()).isEqualTo(200);
+      assertThat(((Order) firstResponse.getBody()).getId())
+          .isEqualTo(((Order) secondResponse.getBody()).getId());
+    } finally {
+      start.countDown();
+    }
+
+    assertThat(productRepository.findById(product.getId()).orElseThrow().getStockQuantity())
+        .isZero();
+    assertThat(orderRepository.count()).isEqualTo(1);
+  }
+
+  @Test
+  void reusingKeyWithDifferentRequestReturnsConflict() {
+    String idempotencyKey = UUID.randomUUID().toString();
+    CheckoutRequest original = new CheckoutRequest(
+        "Idempotency Test",
+        "Test address",
+        "TEST",
+        List.of(new CheckoutItemRequest(product.getId(), 1)));
+    CheckoutRequest changed = new CheckoutRequest(
+        "Different Recipient",
+        "Test address",
+        "TEST",
+        List.of(new CheckoutItemRequest(product.getId(), 1)));
+
+    ResponseEntity<?> first = orderController.checkout(original, idempotencyKey, authentication);
+    ResponseEntity<?> retryWithChangedBody = orderController.checkout(changed, idempotencyKey, authentication);
+
+    assertThat(first.getStatusCode().value()).isEqualTo(200);
+    assertThat(retryWithChangedBody.getStatusCode().value()).isEqualTo(409);
+    assertThat(productRepository.findById(product.getId()).orElseThrow().getStockQuantity())
+        .isZero();
+    assertThat(orderRepository.count()).isEqualTo(1);
+  }
+
   private ResponseEntity<?> checkoutTogether(
       CheckoutRequest request,
       CountDownLatch ready,
-      CountDownLatch start) throws InterruptedException {
+      CountDownLatch start,
+      String idempotencyKey) throws InterruptedException {
     ready.countDown();
     if (!start.await(10, TimeUnit.SECONDS)) {
       throw new IllegalStateException("Timed out waiting for concurrent checkout start");
     }
-    return orderController.checkout(request, authentication);
+    return orderController.checkout(request, idempotencyKey, authentication);
   }
 }
