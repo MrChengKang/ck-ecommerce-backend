@@ -132,9 +132,58 @@ public class OrderController {
       return ResponseEntity.ok("Status already set");
     }
 
+    if ("Pending".equals(currentStatus) && "Cancelled".equals(newStatus)
+        && !restoreInventoryForOrder(order)) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body("Could not safely restore inventory for this order");
+    }
+
     order.setStatus(newStatus);
     orderRepository.save(order);
     return ResponseEntity.ok("Status updated");
+  }
+
+  private boolean restoreInventoryForOrder(Order order) {
+    Map<Long, Long> quantityByProduct = new HashMap<>();
+
+    if (order.getItems() == null || order.getItems().isEmpty()) {
+      return true;
+    }
+
+    for (OrderItem item : order.getItems()) {
+      if (item == null || item.getProductId() == null ||
+          item.getQuantity() == null || item.getQuantity() <= 0) {
+        return false;
+      }
+
+      long combined = quantityByProduct.getOrDefault(item.getProductId(), 0L)
+          + item.getQuantity();
+      if (combined > Integer.MAX_VALUE) {
+        return false;
+      }
+
+      quantityByProduct.put(item.getProductId(), combined);
+    }
+
+    Map<Long, Product> lockedProducts = new LinkedHashMap<>();
+    List<Long> productIds = quantityByProduct.keySet().stream().sorted().toList();
+
+    for (Long productId : productIds) {
+      Product product = productRepository.findByIdForUpdate(productId).orElse(null);
+      if (product == null || product.getStockQuantity() == null ||
+          (long) product.getStockQuantity() + quantityByProduct.get(productId) > Integer.MAX_VALUE) {
+        return false;
+      }
+
+      lockedProducts.put(productId, product);
+    }
+
+    for (Long productId : productIds) {
+      Product product = lockedProducts.get(productId);
+      product.setStockQuantity((int) (product.getStockQuantity() + quantityByProduct.get(productId)));
+    }
+
+    return true;
   }
 
   private String normalizeCurrentStatus(String status) {
@@ -255,15 +304,27 @@ public class OrderController {
     return ResponseEntity.ok(orderRepository.save(order));
   }
 
+  @Transactional
   @DeleteMapping("/{id}")
   public ResponseEntity<?> deleteOrder(@PathVariable Long id) {
     try {
-      if (orderRepository.existsById(id)) {
-        orderRepository.deleteById(id);
-        return ResponseEntity.ok("Order #" + id + " deleted successfully");
-      } else {
+      Order order = orderRepository.findByIdForUpdate(id).orElse(null);
+      if (order == null) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Order not found");
       }
+
+      String currentStatus = normalizeCurrentStatus(order.getStatus());
+      if (currentStatus == null) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body("Current order status is not recognized");
+      }
+
+      if ("Pending".equals(currentStatus) && !restoreInventoryForOrder(order)) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body("Could not safely restore inventory for this order");
+      }
+
+      orderRepository.delete(order);
+      return ResponseEntity.ok("Order #" + id + " deleted successfully");
     } catch (Exception e) {
       return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
           .body("Delete failed: " + e.getMessage());
