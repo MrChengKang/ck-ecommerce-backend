@@ -49,6 +49,45 @@ public class OrderController {
   // return orderRepository.findAll();
   // }
 
+  private List<OrderItemResponse> toItemResponses(Order order) {
+    if (order.getItems() == null) {
+      return List.of();
+    }
+
+    return order.getItems().stream()
+        .map(item -> new OrderItemResponse(
+            item.getId(),
+            item.getProductId(),
+            item.getProductName(),
+            item.getPrice(),
+            item.getQuantity(),
+            item.getImageUrl()))
+        .toList();
+  }
+
+  private CustomerOrderResponse toCustomerOrderResponse(Order order) {
+    return new CustomerOrderResponse(
+        order.getId(),
+        order.getOrderNumber(),
+        order.getOrderDate(),
+        order.getStatus(),
+        order.getTotalAmount(),
+        toItemResponses(order));
+  }
+
+  private AdminOrderResponse toAdminOrderResponse(Order order) {
+    return new AdminOrderResponse(
+        order.getId(),
+        order.getOrderNumber(),
+        order.getCustomerName(),
+        order.getCustomerEmail(),
+        order.getShippingAddress(),
+        order.getOrderDate(),
+        order.getStatus(),
+        order.getTotalAmount(),
+        toItemResponses(order));
+  }
+
   private static final Set<String> ALLOWED_STATUSES = Set.of("Pending", "Shipped", "Completed", "Cancelled");
   private static final Map<String, Set<String>> ALLOWED_STATUS_TRANSITIONS = Map.of(
       "Pending", Set.of("Shipped", "Cancelled"),
@@ -85,7 +124,8 @@ public class OrderController {
     }
 
     if (currentStatus.equals(newStatus)) {
-      // Canonicalize legacy casing or the former DELIVERED status when the order is next updated.
+      // Canonicalize legacy casing or the former DELIVERED status when the order is
+      // next updated.
       if (!newStatus.equals(order.getStatus())) {
         order.setStatus(newStatus);
         orderRepository.save(order);
@@ -223,15 +263,22 @@ public class OrderController {
   }
 
   @GetMapping
-  public ResponseEntity<Page<Order>> getOrders(
+  public ResponseEntity<Page<AdminOrderResponse>> getOrders(
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "5") int size) {
-    Pageable pageable = PageRequest.of(page, size, Sort.by("orderDate").descending());
-    return ResponseEntity.ok(orderRepository.findAll(pageable));
+
+    Pageable pageable = PageRequest.of(
+        page, size, Sort.by("orderDate").descending());
+
+    Page<AdminOrderResponse> result = orderRepository.findAll(pageable).map(this::toAdminOrderResponse);
+
+    return ResponseEntity.ok(result);
   }
 
   @GetMapping("/my-orders")
-  public ResponseEntity<List<Order>> getMyOrders(Authentication authentication) {
+  public ResponseEntity<List<CustomerOrderResponse>> getMyOrders(
+      Authentication authentication) {
+
     if (authentication == null) {
       return ResponseEntity.status(401).build();
     }
@@ -243,7 +290,11 @@ public class OrderController {
       return ResponseEntity.status(401).build();
     }
 
-    return ResponseEntity.ok(orderRepository.findByCustomerId(user.getId()));
+    List<CustomerOrderResponse> result = orderRepository.findByCustomerId(user.getId()).stream()
+        .map(this::toCustomerOrderResponse)
+        .toList();
+
+    return ResponseEntity.ok(result);
   }
 
 }
