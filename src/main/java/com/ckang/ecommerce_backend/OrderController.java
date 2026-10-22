@@ -189,14 +189,19 @@ public class OrderController {
 
     Map<Long, Product> products = new HashMap<>();
 
-    for (Long productId : quantityByProduct.keySet()) {
-      Product product = productRepository.findById(productId).orElse(null);
+    List<Long> productIds = quantityByProduct.keySet().stream()
+        .sorted()
+        .toList();
+
+    for (Long productId : productIds) {
+      Product product = productRepository.findByIdForUpdate(productId).orElse(null);
 
       if (product == null) {
         return ResponseEntity.badRequest().body("Product not found: " + productId);
       }
 
       int quantity = quantityByProduct.get(productId);
+
       if (product.getStockQuantity() == null ||
           product.getStockQuantity() < quantity) {
         return ResponseEntity.badRequest().body(
