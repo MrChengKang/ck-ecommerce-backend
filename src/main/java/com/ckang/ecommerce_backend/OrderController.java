@@ -95,6 +95,7 @@ public class OrderController {
       "Completed", Set.of(),
       "Cancelled", Set.of());
 
+  @Transactional
   @PatchMapping("/{id}/status")
   public ResponseEntity<?> updateStatus(
       @PathVariable Long id,
@@ -106,7 +107,7 @@ public class OrderController {
       return ResponseEntity.badRequest().body("Invalid order status");
     }
 
-    Order order = orderRepository.findById(id).orElse(null);
+    Order order = orderRepository.findByIdForUpdate(id).orElse(null);
     if (order == null) {
       return ResponseEntity.notFound().build();
     }
@@ -124,8 +125,6 @@ public class OrderController {
     }
 
     if (currentStatus.equals(newStatus)) {
-      // Canonicalize legacy casing or the former DELIVERED status when the order is
-      // next updated.
       if (!newStatus.equals(order.getStatus())) {
         order.setStatus(newStatus);
         orderRepository.save(order);
@@ -158,8 +157,12 @@ public class OrderController {
   public ResponseEntity<?> checkout(
       @RequestBody CheckoutRequest request,
       Authentication authentication) {
-    if (authentication == null || request.items() == null || request.items().isEmpty()) {
-      return ResponseEntity.badRequest().body("Cart is empty or user is not authenticated");
+    if (authentication == null ||
+        request == null ||
+        request.items() == null ||
+        request.items().isEmpty()) {
+      return ResponseEntity.badRequest()
+          .body("Cart is empty or user is not authenticated");
     }
 
     User user = userRepository.findByUsername(authentication.getName())

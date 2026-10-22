@@ -8,38 +8,46 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.time.LocalDate;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.repository.query.Param;
+import java.util.Optional;
 
 @Repository
 public interface OrderRepository extends JpaRepository<Order, Long> {
 
-    List<Order> findByCustomerEmail(String customerEmail);
+        List<Order> findByCustomerEmail(String customerEmail);
 
-    Long countByCustomerEmail(String customerEmail);
+        Long countByCustomerEmail(String customerEmail);
 
-    @Query("SELECT SUM(o.totalAmount) FROM Order o WHERE o.customerEmail = :email")
-    Double sumTotalAmountByCustomerEmail(@Param("email") String email);
+        @Lock(LockModeType.PESSIMISTIC_WRITE)
+        @Query("SELECT o FROM Order o WHERE o.id = :id")
+        Optional<Order> findByIdForUpdate(@Param("id") Long id);
 
-    @Query("SELECT SUM(o.totalAmount) FROM Order o WHERE o.status != 'CANCELLED'")
-    Double getTotalRevenue();
+        @Query("SELECT SUM(o.totalAmount) FROM Order o WHERE o.customerEmail = :email")
+        Double sumTotalAmountByCustomerEmail(@Param("email") String email);
 
-    long count();
+        @Query("SELECT SUM(o.totalAmount) FROM Order o WHERE o.status != 'CANCELLED'")
+        Double getTotalRevenue();
 
-    List<Order> findByCustomerId(Long customerId);
+        long count();
 
-    @Query(value = "SELECT DATE(order_date) as date, SUM(total_amount) as amount " +
-            "FROM orders " +
-            "WHERE order_date >= CURRENT_DATE - INTERVAL 6 DAY " +
-            "GROUP BY DATE(order_date) " +
-            "ORDER BY date ASC", nativeQuery = true)
-    List<Object[]> getDailyRevenue();
+        List<Order> findByCustomerId(Long customerId);
 
-    @Query(value = "SELECT DATE(order_date) as date, COUNT(id) as count " +
-            "FROM orders " +
-            "WHERE order_date >= CURRENT_DATE - INTERVAL 6 DAY " +
-            "GROUP BY DATE(order_date) " +
-            "ORDER BY date ASC", nativeQuery = true)
-    List<Object[]> getDailyOrderCount();
+        @Query(value = "SELECT DATE(order_date) as date, SUM(total_amount) as amount " +
+                        "FROM orders " +
+                        "WHERE order_date >= CURRENT_DATE - INTERVAL 6 DAY " +
+                        "GROUP BY DATE(order_date) " +
+                        "ORDER BY date ASC", nativeQuery = true)
+        List<Object[]> getDailyRevenue();
 
-    Page<Order> findAll(Pageable pageable);
+        @Query(value = "SELECT DATE(order_date) as date, COUNT(id) as count " +
+                        "FROM orders " +
+                        "WHERE order_date >= CURRENT_DATE - INTERVAL 6 DAY " +
+                        "GROUP BY DATE(order_date) " +
+                        "ORDER BY date ASC", nativeQuery = true)
+        List<Object[]> getDailyOrderCount();
+
+        Page<Order> findAll(Pageable pageable);
 
 }
