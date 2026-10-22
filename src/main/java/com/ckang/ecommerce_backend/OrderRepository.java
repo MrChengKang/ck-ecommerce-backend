@@ -34,6 +34,10 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
         List<Order> findByCustomerId(Long customerId);
 
+        Page<Order> findByArchivedFalse(Pageable pageable);
+
+        Page<Order> findByArchivedTrue(Pageable pageable);
+
         @Query(value = "SELECT DATE(order_date) as date, SUM(total_amount) as amount " +
                         "FROM orders " +
                         "WHERE order_date >= CURRENT_DATE - INTERVAL 6 DAY " +
@@ -47,7 +51,5 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
                         "GROUP BY DATE(order_date) " +
                         "ORDER BY date ASC", nativeQuery = true)
         List<Object[]> getDailyOrderCount();
-
-        Page<Order> findAll(Pageable pageable);
 
 }

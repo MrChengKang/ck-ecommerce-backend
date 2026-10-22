@@ -12,5 +12,7 @@ public record AdminOrderResponse(
     LocalDateTime orderDate,
     String status,
     Double totalAmount,
-    List<OrderItemResponse> items) {
+    List<OrderItemResponse> items,
+    boolean archived,
+    LocalDateTime archivedAt) {
 }

@@ -97,7 +97,9 @@ public class OrderController {
         order.getOrderDate(),
         order.getStatus(),
         order.getTotalAmount(),
-        toItemResponses(order));
+        toItemResponses(order),
+        order.isArchived(),
+        order.getArchivedAt());
   }
 
   private static final Set<String> ALLOWED_STATUSES = Set.of("Pending", "Shipped", "Completed", "Cancelled");
@@ -122,6 +124,10 @@ public class OrderController {
     Order order = orderRepository.findByIdForUpdate(id).orElse(null);
     if (order == null) {
       return ResponseEntity.notFound().build();
+    }
+    if (order.isArchived()) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body("Archived orders must be restored before updating their status");
     }
 
     String currentStatus = normalizeCurrentStatus(order.getStatus());
@@ -378,11 +384,15 @@ public class OrderController {
 
   @Transactional
   @DeleteMapping("/{id}")
-  public ResponseEntity<?> deleteOrder(@PathVariable Long id) {
+  public ResponseEntity<?> archiveOrder(@PathVariable Long id) {
     try {
       Order order = orderRepository.findByIdForUpdate(id).orElse(null);
       if (order == null) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Order not found");
+      }
+
+      if (order.isArchived()) {
+        return ResponseEntity.ok("Order is already archived");
       }
 
       String currentStatus = normalizeCurrentStatus(order.getStatus());
@@ -390,17 +400,39 @@ public class OrderController {
         return ResponseEntity.status(HttpStatus.CONFLICT).body("Current order status is not recognized");
       }
 
-      if ("Pending".equals(currentStatus) && !restoreInventoryForOrder(order)) {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-            .body("Could not safely restore inventory for this order");
+      if ("Pending".equals(currentStatus)) {
+        if (!restoreInventoryForOrder(order)) {
+          return ResponseEntity.status(HttpStatus.CONFLICT)
+              .body("Could not safely restore inventory for this order");
+        }
+        order.setStatus("Cancelled");
       }
 
-      orderRepository.delete(order);
-      return ResponseEntity.ok("Order #" + id + " deleted successfully");
+      order.setArchived(true);
+      order.setArchivedAt(LocalDateTime.now());
+      orderRepository.save(order);
+      return ResponseEntity.ok("Order #" + id + " archived successfully");
     } catch (Exception e) {
       return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-          .body("Delete failed: " + e.getMessage());
+          .body("Archive failed: " + e.getMessage());
     }
+  }
+
+  @Transactional
+  @PostMapping("/{id}/restore")
+  public ResponseEntity<?> restoreArchivedOrder(@PathVariable Long id) {
+    Order order = orderRepository.findByIdForUpdate(id).orElse(null);
+    if (order == null) {
+      return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Order not found");
+    }
+    if (!order.isArchived()) {
+      return ResponseEntity.ok("Order is already active");
+    }
+
+    order.setArchived(false);
+    order.setArchivedAt(null);
+    orderRepository.save(order);
+    return ResponseEntity.ok("Order #" + id + " restored successfully");
   }
 
   @GetMapping
@@ -411,8 +443,19 @@ public class OrderController {
     Pageable pageable = PageRequest.of(
         page, size, Sort.by("orderDate").descending());
 
-    Page<AdminOrderResponse> result = orderRepository.findAll(pageable).map(this::toAdminOrderResponse);
+    Page<AdminOrderResponse> result = orderRepository.findByArchivedFalse(pageable)
+        .map(this::toAdminOrderResponse);
 
+    return ResponseEntity.ok(result);
+  }
+
+  @GetMapping("/archived")
+  public ResponseEntity<Page<AdminOrderResponse>> getArchivedOrders(
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "5") int size) {
+    Pageable pageable = PageRequest.of(page, size, Sort.by("orderDate").descending());
+    Page<AdminOrderResponse> result = orderRepository.findByArchivedTrue(pageable)
+        .map(this::toAdminOrderResponse);
     return ResponseEntity.ok(result);
   }
 

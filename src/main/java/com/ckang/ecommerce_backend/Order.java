@@ -20,6 +20,10 @@ public class Order {
   private LocalDateTime orderDate;
   private String shippingAddress;
   private String paymentMethod;
+  @Column(name = "archived", nullable = false, columnDefinition = "boolean default false")
+  private boolean archived = false;
+  @Column(name = "archived_at")
+  private LocalDateTime archivedAt;
 
   @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
   @JoinColumn(name = "order_id")
@@ -111,5 +115,21 @@ public class Order {
 
   public void setCustomerId(Long customerId) {
     this.customerId = customerId;
+  }
+
+  public boolean isArchived() {
+    return archived;
+  }
+
+  public void setArchived(boolean archived) {
+    this.archived = archived;
+  }
+
+  public LocalDateTime getArchivedAt() {
+    return archivedAt;
+  }
+
+  public void setArchivedAt(LocalDateTime archivedAt) {
+    this.archivedAt = archivedAt;
   }
 }
