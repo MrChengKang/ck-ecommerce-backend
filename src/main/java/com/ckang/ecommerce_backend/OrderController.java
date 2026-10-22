@@ -24,7 +24,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -51,14 +50,20 @@ public class OrderController {
   // }
 
   private static final Set<String> ALLOWED_STATUSES = Set.of("Pending", "Shipped", "Completed", "Cancelled");
+  private static final Map<String, Set<String>> ALLOWED_STATUS_TRANSITIONS = Map.of(
+      "Pending", Set.of("Shipped", "Cancelled"),
+      "Shipped", Set.of("Completed"),
+      "Completed", Set.of(),
+      "Cancelled", Set.of());
 
   @PatchMapping("/{id}/status")
   public ResponseEntity<?> updateStatus(
       @PathVariable Long id,
-      @RequestBody Map<String, String> payload) {
-    String newStatus = payload.get("status");
+      @RequestBody(required = false) Map<String, String> payload) {
 
-    if (!ALLOWED_STATUSES.contains(newStatus)) {
+    String newStatus = payload == null ? null : payload.get("status");
+
+    if (newStatus == null || !ALLOWED_STATUSES.contains(newStatus)) {
       return ResponseEntity.badRequest().body("Invalid order status");
     }
 
@@ -67,9 +72,45 @@ public class OrderController {
       return ResponseEntity.notFound().build();
     }
 
+    String currentStatus = normalizeCurrentStatus(order.getStatus());
+
+    if (currentStatus == null) {
+      return ResponseEntity.status(HttpStatus.CONFLICT).body("Current order status is not recognized");
+    }
+
+    if (!currentStatus.equals(newStatus)
+        && !ALLOWED_STATUS_TRANSITIONS.get(currentStatus).contains(newStatus)) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body("Order status cannot change from " + currentStatus + " to " + newStatus);
+    }
+
+    if (currentStatus.equals(newStatus)) {
+      // Canonicalize legacy casing or the former DELIVERED status when the order is next updated.
+      if (!newStatus.equals(order.getStatus())) {
+        order.setStatus(newStatus);
+        orderRepository.save(order);
+      }
+      return ResponseEntity.ok("Status already set");
+    }
+
     order.setStatus(newStatus);
     orderRepository.save(order);
     return ResponseEntity.ok("Status updated");
+  }
+
+  private String normalizeCurrentStatus(String status) {
+    if (status == null) {
+      return null;
+    }
+
+    if ("Delivered".equalsIgnoreCase(status)) {
+      return "Completed";
+    }
+
+    return ALLOWED_STATUSES.stream()
+        .filter(allowedStatus -> allowedStatus.equalsIgnoreCase(status))
+        .findFirst()
+        .orElse(null);
   }
 
   @Transactional
@@ -164,15 +205,6 @@ public class OrderController {
     order.setTotalAmount(total.doubleValue());
 
     return ResponseEntity.ok(orderRepository.save(order));
-  }
-
-  @PutMapping("/{id}/status")
-  public ResponseEntity<?> updateOrderStatus(@PathVariable Long id, @RequestBody Map<String, String> payload) {
-    String newStatus = payload.get("status");
-    Order order = orderRepository.findById(id).orElseThrow();
-    order.setStatus(newStatus);
-    orderRepository.save(order);
-    return ResponseEntity.ok("Status updated to " + newStatus);
   }
 
   @DeleteMapping("/{id}")
