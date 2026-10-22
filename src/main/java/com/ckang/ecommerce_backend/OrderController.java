@@ -1,6 +1,7 @@
 package com.ckang.ecommerce_backend;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.math.BigDecimal;
@@ -329,7 +330,8 @@ public class OrderController {
     order.setShippingAddress(request.shippingAddress());
     order.setPaymentMethod(request.paymentMethod());
     order.setOrderNumber("CK" + java.util.UUID.randomUUID());
-    order.setOrderDate(LocalDateTime.now());
+    // DATETIME has no timezone, so store a UTC timestamp by convention.
+    order.setOrderDate(LocalDateTime.now(ZoneOffset.UTC));
     order.setStatus("Pending");
 
     BigDecimal total = BigDecimal.ZERO;
