@@ -8,6 +8,7 @@ public record CustomerOrderResponse(
     String orderNumber,
     LocalDateTime orderDate,
     String status,
+    String paymentStatus,
     Double totalAmount,
     List<OrderItemResponse> items) {
 }

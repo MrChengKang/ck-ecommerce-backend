@@ -32,6 +32,8 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
         long count();
 
+        Optional<Order> findByBillplzBillId(String billplzBillId);
+
         List<Order> findByCustomerId(Long customerId);
 
         Page<Order> findByArchivedFalse(Pageable pageable);

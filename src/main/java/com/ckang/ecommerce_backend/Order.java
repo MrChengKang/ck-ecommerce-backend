@@ -20,6 +20,12 @@ public class Order {
   private LocalDateTime orderDate;
   private String shippingAddress;
   private String paymentMethod;
+  @Column(name = "payment_status", length = 20)
+  private String paymentStatus = "UNPAID";
+  @Column(name = "billplz_bill_id", unique = true, length = 64)
+  private String billplzBillId;
+  @Column(name = "billplz_payment_url", length = 1024)
+  private String billplzPaymentUrl;
   @Column(name = "archived", nullable = false, columnDefinition = "boolean default false")
   private boolean archived = false;
   @Column(name = "archived_at")
@@ -131,5 +137,29 @@ public class Order {
 
   public void setArchivedAt(LocalDateTime archivedAt) {
     this.archivedAt = archivedAt;
+  }
+
+  public String getPaymentStatus() {
+    return paymentStatus;
+  }
+
+  public void setPaymentStatus(String paymentStatus) {
+    this.paymentStatus = paymentStatus;
+  }
+
+  public String getBillplzBillId() {
+    return billplzBillId;
+  }
+
+  public void setBillplzBillId(String billplzBillId) {
+    this.billplzBillId = billplzBillId;
+  }
+
+  public String getBillplzPaymentUrl() {
+    return billplzPaymentUrl;
+  }
+
+  public void setBillplzPaymentUrl(String billplzPaymentUrl) {
+    this.billplzPaymentUrl = billplzPaymentUrl;
   }
 }

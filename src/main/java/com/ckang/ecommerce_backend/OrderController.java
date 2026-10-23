@@ -13,7 +13,7 @@ import java.util.HexFormat;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-
+import org.springframework.beans.factory.annotation.Value;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.security.core.Authentication;
@@ -55,6 +55,15 @@ public class OrderController {
   @Autowired
   private CheckoutIdempotencyRepository checkoutIdempotencyRepository;
 
+  @Autowired
+  private BillplzService billplzService;
+
+  @Value("${billplz.callback-url}")
+  private String billplzCallbackUrl;
+
+  @Value("${billplz.redirect-url}")
+  private String billplzRedirectUrl;
+
   private final ObjectMapper objectMapper = new ObjectMapper();
 
   // @GetMapping
@@ -84,6 +93,7 @@ public class OrderController {
         order.getOrderNumber(),
         order.getOrderDate(),
         order.getStatus(),
+        order.getPaymentStatus(),
         order.getTotalAmount(),
         toItemResponses(order));
   }
@@ -221,6 +231,65 @@ public class OrderController {
   }
 
   @Transactional
+  @PostMapping("/{id}/payment")
+  public ResponseEntity<?> createPayment(
+      @PathVariable Long id,
+      Authentication authentication) {
+
+    if (authentication == null) {
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+    }
+
+    User user = userRepository.findByUsername(authentication.getName())
+        .orElse(null);
+
+    if (user == null) {
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+    }
+
+    Order order = orderRepository.findByIdForUpdate(id).orElse(null);
+
+    if (order == null) {
+      return ResponseEntity.notFound().build();
+    }
+
+    if (!user.getId().equals(order.getCustomerId())) {
+      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+    }
+
+    if (order.isArchived() || !"Pending".equalsIgnoreCase(order.getStatus())) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body("This order cannot be paid");
+    }
+
+    if (order.getBillplzBillId() != null
+        && order.getBillplzPaymentUrl() != null) {
+      return ResponseEntity.ok(Map.of(
+          "orderId", order.getId(),
+          "paymentUrl", order.getBillplzPaymentUrl()));
+    }
+
+    BillplzService.BillplzBill bill = billplzService.createBill(
+        order,
+        billplzCallbackUrl,
+        billplzRedirectUrl);
+
+    if (bill.id() == null || bill.id().isBlank()) {
+      return ResponseEntity.internalServerError()
+          .body("Billplz did not return a bill ID");
+    }
+
+    order.setBillplzBillId(bill.id());
+    order.setBillplzPaymentUrl(bill.url());
+    order.setPaymentStatus("UNPAID");
+    orderRepository.save(order);
+
+    return ResponseEntity.ok(Map.of(
+        "orderId", order.getId(),
+        "paymentUrl", bill.url()));
+  }
+
+  @Transactional
   @PostMapping("/checkout")
   public ResponseEntity<?> checkout(
       @RequestBody CheckoutRequest request,
@@ -272,7 +341,8 @@ public class OrderController {
       return ResponseEntity.internalServerError().body("Could not validate checkout request");
     }
 
-    // The MySQL upsert serializes concurrent requests using the same customer/key pair.
+    // The MySQL upsert serializes concurrent requests using the same customer/key
+    // pair.
     checkoutIdempotencyRepository.reserveKey(user.getId(), idempotencyKey, requestHash);
     CheckoutIdempotency checkoutRecord = checkoutIdempotencyRepository
         .findForUpdate(user.getId(), idempotencyKey)
