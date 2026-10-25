@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.transaction.annotation.Transactional;
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.List;
@@ -33,6 +34,10 @@ public class ProductController {
   // --- 3. 新增商品 ---
   @PostMapping
   public ResponseEntity<?> addProduct(@RequestBody Product product) {
+    if (product == null || !hasValidStock(product.getStockQuantity())) {
+      return ResponseEntity.badRequest().body("Stock quantity must be a non-negative whole number");
+    }
+
     try {
       Product savedProduct = productRepository.save(product);
       return ResponseEntity.ok(savedProduct);
@@ -54,30 +59,51 @@ public class ProductController {
   }
 
   // --- 5. 更新完整商品（修復：補上 stockQuantity） ---
+  @Transactional
   @PutMapping("/{id}")
-  public ResponseEntity<Product> updateProduct(@PathVariable Long id, @RequestBody Product productDetails) {
-    return productRepository.findById(id).map(product -> {
+  public ResponseEntity<?> updateProduct(@PathVariable Long id, @RequestBody Product productDetails) {
+    if (productDetails == null || !hasValidStock(productDetails.getStockQuantity())) {
+      return ResponseEntity.badRequest().body("Stock quantity must be a non-negative whole number");
+    }
+
+    return productRepository.findByIdForUpdate(id).map(product -> {
       product.setName(productDetails.getName());
       product.setPrice(productDetails.getPrice());
       product.setDescription(productDetails.getDescription());
       product.setImageUrl(productDetails.getImageUrl());
       product.setCategory(productDetails.getCategory());
-      product.setStockQuantity(productDetails.getStockQuantity()); // 👈 💡 關鍵修復：這裡補上庫存更新！
+      product.setStockQuantity(productDetails.getStockQuantity());
       return ResponseEntity.ok(productRepository.save(product));
     }).orElse(ResponseEntity.notFound().build());
   }
 
-  // --- 5.5 新增：單獨快速更新庫存 API (PATCH) ---
+  // --- Quick inventory adjustment ---
+  @Transactional
   @PatchMapping("/{id}/stock")
-  public ResponseEntity<?> updateStockOnly(@PathVariable Long id, @RequestBody Map<String, Integer> payload) {
-    return productRepository.findById(id).map(product -> {
-      if (payload.containsKey("stockQuantity")) {
-        product.setStockQuantity(payload.get("stockQuantity"));
-        productRepository.save(product);
-        return ResponseEntity.ok(product);
-      }
-      return ResponseEntity.badRequest().body("Field 'stockQuantity' is missing");
-    }).orElse(ResponseEntity.notFound().build());
+  public ResponseEntity<?> updateStockOnly(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> payload) {
+    Object value = payload == null ? null : payload.get("stockQuantity");
+    Integer stockQuantity = null;
+    if (value instanceof Integer integer) {
+      stockQuantity = integer;
+    } else if (value instanceof Long longValue && longValue <= Integer.MAX_VALUE && longValue >= 0) {
+      stockQuantity = longValue.intValue();
+    }
+
+    if (!hasValidStock(stockQuantity)) {
+      return ResponseEntity.badRequest().body("Stock quantity must be a non-negative whole number");
+    }
+
+    Product product = productRepository.findByIdForUpdate(id).orElse(null);
+    if (product == null) {
+      return ResponseEntity.notFound().build();
+    }
+
+    product.setStockQuantity(stockQuantity);
+    return ResponseEntity.ok(productRepository.save(product));
+  }
+
+  private boolean hasValidStock(Integer stockQuantity) {
+    return stockQuantity != null && stockQuantity >= 0;
   }
 
   // --- 6. 圖片上傳 ---
