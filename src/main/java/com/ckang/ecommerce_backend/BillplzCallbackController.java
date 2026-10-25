@@ -8,6 +8,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -16,6 +18,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/payments/billplz")
 public class BillplzCallbackController {
+
+  private static final Logger logger = LoggerFactory.getLogger(BillplzCallbackController.class);
 
   private final BillplzService billplzService;
   private final OrderRepository orderRepository;
@@ -31,6 +35,7 @@ public class BillplzCallbackController {
   @PostMapping(value = "/callback", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
   public ResponseEntity<?> callback(@RequestParam Map<String, String> params) {
     if (!billplzService.isValidCallbackSignature(params)) {
+      logger.warn("Rejected Billplz callback because its signature was invalid");
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
           .body("Invalid Billplz signature");
     }
@@ -40,8 +45,9 @@ public class BillplzCallbackController {
       return ResponseEntity.badRequest().body("Missing Billplz bill ID");
     }
 
-    Order order = orderRepository.findByBillplzBillId(billId).orElse(null);
+    Order order = orderRepository.findByBillplzBillIdForUpdate(billId).orElse(null);
     if (order == null) {
+      logger.warn("Received Billplz callback for an unknown bill ID");
       return ResponseEntity.notFound().build();
     }
 
@@ -62,6 +68,7 @@ public class BillplzCallbackController {
           .longValueExact();
 
       if (receivedAmount != expectedAmount) {
+        logger.error("Billplz callback amount mismatch for order {}", order.getId());
         return ResponseEntity.badRequest().body("Payment amount mismatch");
       }
     } catch (RuntimeException e) {
@@ -70,7 +77,11 @@ public class BillplzCallbackController {
 
     // Idempotent: repeated callbacks leave an already-paid order paid.
     order.setPaymentStatus("PAID");
+    if ("Pending".equalsIgnoreCase(order.getStatus())) {
+      order.setStatus("Processing");
+    }
     orderRepository.save(order);
+    logger.info("Confirmed Billplz payment for order {}", order.getId());
 
     return ResponseEntity.ok("Payment confirmed");
   }

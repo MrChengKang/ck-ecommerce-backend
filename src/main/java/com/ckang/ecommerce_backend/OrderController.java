@@ -37,6 +37,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClientException;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -57,6 +58,9 @@ public class OrderController {
 
   @Autowired
   private BillplzService billplzService;
+
+  @Autowired
+  private InventoryService inventoryService;
 
   @Value("${billplz.callback-url}")
   private String billplzCallbackUrl;
@@ -92,6 +96,7 @@ public class OrderController {
         order.getId(),
         order.getOrderNumber(),
         order.getOrderDate(),
+        order.getPaymentExpiresAt(),
         order.getStatus(),
         order.getPaymentStatus(),
         order.getTotalAmount(),
@@ -106,16 +111,19 @@ public class OrderController {
         order.getCustomerEmail(),
         order.getShippingAddress(),
         order.getOrderDate(),
+        order.getPaymentExpiresAt(),
         order.getStatus(),
+        order.getPaymentStatus(),
         order.getTotalAmount(),
         toItemResponses(order),
         order.isArchived(),
         order.getArchivedAt());
   }
 
-  private static final Set<String> ALLOWED_STATUSES = Set.of("Pending", "Shipped", "Completed", "Cancelled");
+  private static final Set<String> ALLOWED_STATUSES = Set.of("Pending", "Processing", "Shipped", "Completed", "Cancelled");
   private static final Map<String, Set<String>> ALLOWED_STATUS_TRANSITIONS = Map.of(
-      "Pending", Set.of("Shipped", "Cancelled"),
+      "Pending", Set.of("Processing", "Cancelled"),
+      "Processing", Set.of("Shipped"),
       "Shipped", Set.of("Completed"),
       "Completed", Set.of(),
       "Cancelled", Set.of());
@@ -153,6 +161,16 @@ public class OrderController {
           .body("Order status cannot change from " + currentStatus + " to " + newStatus);
     }
 
+    if ("Processing".equals(newStatus) && !"PAID".equalsIgnoreCase(order.getPaymentStatus())) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body("An order can only enter processing after payment is confirmed");
+    }
+
+    if ("Cancelled".equals(newStatus) && "PAID".equalsIgnoreCase(order.getPaymentStatus())) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body("Paid orders cannot be cancelled through this action");
+    }
+
     if (currentStatus.equals(newStatus)) {
       if (!newStatus.equals(order.getStatus())) {
         order.setStatus(newStatus);
@@ -161,58 +179,20 @@ public class OrderController {
       return ResponseEntity.ok("Status already set");
     }
 
-    if ("Pending".equals(currentStatus) && "Cancelled".equals(newStatus)
-        && !restoreInventoryForOrder(order)) {
-      return ResponseEntity.status(HttpStatus.CONFLICT)
-          .body("Could not safely restore inventory for this order");
+    if ("Pending".equals(currentStatus) && "Cancelled".equals(newStatus)) {
+      if (!billplzService.deleteUnpaidBill(order.getBillplzBillId())) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body("Could not confirm the Billplz payment link is unpaid. Refresh the order before cancelling.");
+      }
+      if (!inventoryService.restoreInventory(order)) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body("Could not safely restore inventory for this order");
+      }
     }
 
     order.setStatus(newStatus);
     orderRepository.save(order);
     return ResponseEntity.ok("Status updated");
-  }
-
-  private boolean restoreInventoryForOrder(Order order) {
-    Map<Long, Long> quantityByProduct = new HashMap<>();
-
-    if (order.getItems() == null || order.getItems().isEmpty()) {
-      return true;
-    }
-
-    for (OrderItem item : order.getItems()) {
-      if (item == null || item.getProductId() == null ||
-          item.getQuantity() == null || item.getQuantity() <= 0) {
-        return false;
-      }
-
-      long combined = quantityByProduct.getOrDefault(item.getProductId(), 0L)
-          + item.getQuantity();
-      if (combined > Integer.MAX_VALUE) {
-        return false;
-      }
-
-      quantityByProduct.put(item.getProductId(), combined);
-    }
-
-    Map<Long, Product> lockedProducts = new LinkedHashMap<>();
-    List<Long> productIds = quantityByProduct.keySet().stream().sorted().toList();
-
-    for (Long productId : productIds) {
-      Product product = productRepository.findByIdForUpdate(productId).orElse(null);
-      if (product == null || product.getStockQuantity() == null ||
-          (long) product.getStockQuantity() + quantityByProduct.get(productId) > Integer.MAX_VALUE) {
-        return false;
-      }
-
-      lockedProducts.put(productId, product);
-    }
-
-    for (Long productId : productIds) {
-      Product product = lockedProducts.get(productId);
-      product.setStockQuantity((int) (product.getStockQuantity() + quantityByProduct.get(productId)));
-    }
-
-    return true;
   }
 
   private String normalizeCurrentStatus(String status) {
@@ -228,6 +208,77 @@ public class OrderController {
         .filter(allowedStatus -> allowedStatus.equalsIgnoreCase(status))
         .findFirst()
         .orElse(null);
+  }
+
+  @Transactional
+  @PostMapping("/{id}/payment/reconcile")
+  public ResponseEntity<?> reconcilePayment(
+      @PathVariable Long id,
+      Authentication authentication) {
+    if (authentication == null) {
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+    }
+
+    User user = userRepository.findByUsername(authentication.getName()).orElse(null);
+    if (user == null) {
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+    }
+
+    Order order = orderRepository.findByIdForUpdate(id).orElse(null);
+    if (order == null) {
+      return ResponseEntity.notFound().build();
+    }
+    if (!user.getId().equals(order.getCustomerId())) {
+      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+    }
+    if ("PAID".equalsIgnoreCase(order.getPaymentStatus())) {
+      return ResponseEntity.ok(Map.of(
+          "paymentStatus", order.getPaymentStatus(),
+          "orderStatus", order.getStatus(),
+          "message", "Payment is already confirmed"));
+    }
+    if (order.isArchived() || "Cancelled".equalsIgnoreCase(order.getStatus())) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body("This order cannot be reconciled in its current state");
+    }
+    if (order.getBillplzBillId() == null || order.getBillplzBillId().isBlank()) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body("This order does not have a Billplz bill to check");
+    }
+
+    try {
+      BillplzService.BillplzBill bill = billplzService.getBill(order.getBillplzBillId());
+      long expectedAmount = BigDecimal.valueOf(order.getTotalAmount())
+          .movePointRight(2)
+          .setScale(0, java.math.RoundingMode.HALF_UP)
+          .longValueExact();
+
+      if (bill == null || !order.getBillplzBillId().equals(bill.id())
+          || bill.amount() == null || bill.amount() != expectedAmount) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body("Billplz bill details did not match this order");
+      }
+
+      if (!Boolean.TRUE.equals(bill.paid()) || !"paid".equalsIgnoreCase(bill.state())) {
+        return ResponseEntity.ok(Map.of(
+            "paymentStatus", order.getPaymentStatus(),
+            "orderStatus", order.getStatus(),
+            "message", "Billplz still shows this payment as unpaid"));
+      }
+
+      order.setPaymentStatus("PAID");
+      if ("Pending".equalsIgnoreCase(order.getStatus())) {
+        order.setStatus("Processing");
+      }
+      orderRepository.save(order);
+      return ResponseEntity.ok(Map.of(
+          "paymentStatus", order.getPaymentStatus(),
+          "orderStatus", order.getStatus(),
+          "message", "Payment confirmed from Billplz"));
+    } catch (RestClientException | ArithmeticException e) {
+      return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+          .body("Could not verify the payment with Billplz. Please try again later.");
+    }
   }
 
   @Transactional
@@ -260,6 +311,12 @@ public class OrderController {
     if (order.isArchived() || !"Pending".equalsIgnoreCase(order.getStatus())) {
       return ResponseEntity.status(HttpStatus.CONFLICT)
           .body("This order cannot be paid");
+    }
+
+    if (order.getPaymentExpiresAt() != null
+        && !order.getPaymentExpiresAt().isAfter(LocalDateTime.now(ZoneOffset.UTC))) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body("The payment window has expired. This order is being cancelled.");
     }
 
     if (order.getBillplzBillId() != null
@@ -401,8 +458,10 @@ public class OrderController {
     order.setPaymentMethod(request.paymentMethod());
     order.setOrderNumber("CK" + java.util.UUID.randomUUID());
     // DATETIME has no timezone, so store a UTC timestamp by convention.
-    order.setOrderDate(LocalDateTime.now(ZoneOffset.UTC));
+    LocalDateTime orderCreatedAt = LocalDateTime.now(ZoneOffset.UTC);
+    order.setOrderDate(orderCreatedAt);
     order.setStatus("Pending");
+    order.setPaymentExpiresAt(orderCreatedAt.plusMinutes(30));
 
     BigDecimal total = BigDecimal.ZERO;
     List<OrderItem> orderItems = new ArrayList<>();
@@ -473,7 +532,12 @@ public class OrderController {
       }
 
       if ("Pending".equals(currentStatus)) {
-        if (!restoreInventoryForOrder(order)) {
+        if ("PAID".equalsIgnoreCase(order.getPaymentStatus()) ||
+            !billplzService.deleteUnpaidBill(order.getBillplzBillId())) {
+          return ResponseEntity.status(HttpStatus.CONFLICT)
+              .body("Could not confirm this payment is unpaid; order was not archived");
+        }
+        if (!inventoryService.restoreInventory(order)) {
           return ResponseEntity.status(HttpStatus.CONFLICT)
               .body("Could not safely restore inventory for this order");
         }

@@ -9,6 +9,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.HttpClientErrorException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Map;
@@ -80,6 +82,35 @@ public class BillplzService {
     return bill;
   }
 
+  public boolean deleteUnpaidBill(String billId) {
+    if (billId == null || billId.isBlank()) {
+      return true;
+    }
+    try {
+      restClient.delete()
+          .uri("v3/bills/{billId}", billId)
+          .retrieve()
+          .toBodilessEntity();
+      return true;
+    } catch (HttpClientErrorException e) {
+      // A missing bill is already unavailable. A 422 typically means it was paid,
+      // so keep its stock reserved and let the payment callback reconcile it.
+      return e.getStatusCode().value() == 404;
+    } catch (RestClientException e) {
+      return false;
+    }
+  }
+
+  public BillplzBill getBill(String billId) {
+    if (billId == null || billId.isBlank()) {
+      throw new IllegalArgumentException("Billplz bill ID is required");
+    }
+    return restClient.get()
+        .uri("v3/bills/{billId}", billId)
+        .retrieve()
+        .body(BillplzBill.class);
+  }
+
   public boolean isValidCallbackSignature(Map<String, String> params) {
     if (params == null || xSignatureKey == null || xSignatureKey.isBlank()) {
       return false;
@@ -123,6 +154,8 @@ public class BillplzService {
       String id,
       String url,
       Boolean paid,
-      String state) {
+      String state,
+      String collection_id,
+      Long amount) {
   }
 }

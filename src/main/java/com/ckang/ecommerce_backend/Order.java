@@ -18,6 +18,8 @@ public class Order {
   private String status;
   @Column(name = "order_date")
   private LocalDateTime orderDate;
+  @Column(name = "payment_expires_at")
+  private LocalDateTime paymentExpiresAt;
   private String shippingAddress;
   private String paymentMethod;
   @Column(name = "payment_status", length = 20)
@@ -89,6 +91,14 @@ public class Order {
 
   public void setOrderDate(LocalDateTime orderDate) {
     this.orderDate = orderDate;
+  }
+
+  public LocalDateTime getPaymentExpiresAt() {
+    return paymentExpiresAt;
+  }
+
+  public void setPaymentExpiresAt(LocalDateTime paymentExpiresAt) {
+    this.paymentExpiresAt = paymentExpiresAt;
   }
 
   public List<OrderItem> getItems() {

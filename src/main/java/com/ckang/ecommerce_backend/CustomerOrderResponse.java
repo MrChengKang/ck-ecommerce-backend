@@ -7,6 +7,7 @@ public record CustomerOrderResponse(
     Long id,
     String orderNumber,
     LocalDateTime orderDate,
+    LocalDateTime paymentExpiresAt,
     String status,
     String paymentStatus,
     Double totalAmount,

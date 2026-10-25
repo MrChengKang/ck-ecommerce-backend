@@ -7,10 +7,9 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import java.util.List;
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Lock;
-import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 
 @Repository
@@ -33,6 +32,16 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
         long count();
 
         Optional<Order> findByBillplzBillId(String billplzBillId);
+
+        @Lock(LockModeType.PESSIMISTIC_WRITE)
+        @Query("SELECT o FROM Order o WHERE o.billplzBillId = :billplzBillId")
+        Optional<Order> findByBillplzBillIdForUpdate(@Param("billplzBillId") String billplzBillId);
+
+        @Query("SELECT o.id FROM Order o WHERE o.status = 'Pending' " +
+                        "AND (o.paymentStatus IS NULL OR UPPER(o.paymentStatus) <> 'PAID') " +
+                        "AND o.paymentExpiresAt IS NOT NULL AND o.paymentExpiresAt <= :now " +
+                        "AND o.archived = false")
+        List<Long> findExpiredPendingOrderIds(@Param("now") LocalDateTime now);
 
         List<Order> findByCustomerId(Long customerId);
 
