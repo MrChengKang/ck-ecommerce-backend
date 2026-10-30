@@ -33,6 +33,18 @@ public class Order {
   @Column(name = "archived_at")
   private LocalDateTime archivedAt;
 
+  @Column(name = "shipping_carrier", length = 80)
+  private String shippingCarrier;
+
+  @Column(name = "tracking_number", length = 120)
+  private String trackingNumber;
+
+  @Column(name = "tracking_url", length = 1024)
+  private String trackingUrl;
+
+  @Column(name = "shipped_at")
+  private LocalDateTime shippedAt;
+
   @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
   @JoinColumn(name = "order_id")
   private List<OrderItem> items = new java.util.ArrayList<>();
@@ -171,5 +183,37 @@ public class Order {
 
   public void setBillplzPaymentUrl(String billplzPaymentUrl) {
     this.billplzPaymentUrl = billplzPaymentUrl;
+  }
+
+  public String getShippingCarrier() {
+    return shippingCarrier;
+  }
+
+  public void setShippingCarrier(String shippingCarrier) {
+    this.shippingCarrier = shippingCarrier;
+  }
+
+  public String getTrackingNumber() {
+    return trackingNumber;
+  }
+
+  public void setTrackingNumber(String trackingNumber) {
+    this.trackingNumber = trackingNumber;
+  }
+
+  public String getTrackingUrl() {
+    return trackingUrl;
+  }
+
+  public void setTrackingUrl(String trackingUrl) {
+    this.trackingUrl = trackingUrl;
+  }
+
+  public LocalDateTime getShippedAt() {
+    return shippedAt;
+  }
+
+  public void setShippedAt(LocalDateTime shippedAt) {
+    this.shippedAt = shippedAt;
   }
 }

@@ -38,6 +38,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClientException;
+import java.net.URI;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -100,7 +101,11 @@ public class OrderController {
         order.getStatus(),
         order.getPaymentStatus(),
         order.getTotalAmount(),
-        toItemResponses(order));
+        toItemResponses(order),
+        order.getShippingCarrier(),
+        order.getTrackingNumber(),
+        order.getTrackingUrl(),
+        order.getShippedAt());
   }
 
   private AdminOrderResponse toAdminOrderResponse(Order order) {
@@ -117,10 +122,15 @@ public class OrderController {
         order.getTotalAmount(),
         toItemResponses(order),
         order.isArchived(),
-        order.getArchivedAt());
+        order.getArchivedAt(),
+        order.getShippingCarrier(),
+        order.getTrackingNumber(),
+        order.getTrackingUrl(),
+        order.getShippedAt());
   }
 
-  private static final Set<String> ALLOWED_STATUSES = Set.of("Pending", "Processing", "Shipped", "Completed", "Cancelled");
+  private static final Set<String> ALLOWED_STATUSES = Set.of("Pending", "Processing", "Shipped", "Completed",
+      "Cancelled");
   private static final Map<String, Set<String>> ALLOWED_STATUS_TRANSITIONS = Map.of(
       "Pending", Set.of("Processing", "Cancelled"),
       "Processing", Set.of("Shipped"),
@@ -164,6 +174,11 @@ public class OrderController {
     if ("Processing".equals(newStatus) && !"PAID".equalsIgnoreCase(order.getPaymentStatus())) {
       return ResponseEntity.status(HttpStatus.CONFLICT)
           .body("An order can only enter processing after payment is confirmed");
+    }
+
+    if ("Shipped".equals(newStatus)) {
+      return ResponseEntity.badRequest()
+          .body("Use the shipment endpoint to add tracking details");
     }
 
     if ("Cancelled".equals(newStatus) && "PAID".equalsIgnoreCase(order.getPaymentStatus())) {
@@ -615,6 +630,82 @@ public class OrderController {
         .toList();
 
     return ResponseEntity.ok(result);
+  }
+
+  @PatchMapping("/{id}/shipment")
+  @Transactional
+  public ResponseEntity<?> updateShipment(
+      @PathVariable Long id,
+      @RequestBody(required = false) Map<String, String> payload) {
+
+    if (payload == null) {
+      return ResponseEntity.badRequest().body("Shipment details are required");
+    }
+
+    String carrier = payload.get("shippingCarrier");
+    String trackingNumber = payload.get("trackingNumber");
+    String trackingUrl = payload.get("trackingUrl");
+
+    carrier = carrier == null ? "" : carrier.trim();
+    trackingNumber = trackingNumber == null ? "" : trackingNumber.trim();
+    trackingUrl = trackingUrl == null ? "" : trackingUrl.trim();
+
+    if (carrier.isBlank() || trackingNumber.isBlank()) {
+      return ResponseEntity.badRequest()
+          .body("Shipping carrier and tracking number are required");
+    }
+
+    if (carrier.length() > 80 || trackingNumber.length() > 120 || trackingUrl.length() > 1024) {
+      return ResponseEntity.badRequest().body("Shipment details are too long");
+    }
+
+    if (!trackingUrl.isBlank() && !isValidTrackingUrl(trackingUrl)) {
+      return ResponseEntity.badRequest().body("Tracking URL must be a valid HTTPS URL");
+    }
+
+    Order order = orderRepository.findByIdForUpdate(id).orElse(null);
+    if (order == null) {
+      return ResponseEntity.notFound().build();
+    }
+
+    if (order.isArchived()) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body("Archived orders must be restored before updating shipment details");
+    }
+
+    String currentStatus = normalizeCurrentStatus(order.getStatus());
+    if (!"Processing".equals(currentStatus) && !"Shipped".equals(currentStatus)) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body("Only processing or shipped orders can be updated");
+    }
+
+    if (!"PAID".equalsIgnoreCase(order.getPaymentStatus())) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body("An order must be paid before it can be shipped");
+    }
+
+    order.setShippingCarrier(carrier);
+    order.setTrackingNumber(trackingNumber);
+    order.setTrackingUrl(trackingUrl.isBlank() ? null : trackingUrl);
+
+    if ("Processing".equals(currentStatus)) {
+      order.setStatus("Shipped");
+      order.setShippedAt(LocalDateTime.now(ZoneOffset.UTC));
+    } else if (order.getShippedAt() == null) {
+      order.setShippedAt(LocalDateTime.now(ZoneOffset.UTC));
+    }
+
+    orderRepository.save(order);
+    return ResponseEntity.ok(toAdminOrderResponse(order));
+  }
+
+  private boolean isValidTrackingUrl(String value) {
+    try {
+      URI uri = URI.create(value);
+      return "https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null;
+    } catch (IllegalArgumentException e) {
+      return false;
+    }
   }
 
 }
