@@ -9,6 +9,7 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.scheduling.annotation.Async;
 
 @Service
 public class ShipmentNotificationService {
@@ -24,6 +25,7 @@ public class ShipmentNotificationService {
     this.fromEmail = fromEmail;
   }
 
+  @Async
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
   public void sendShipmentNotice(OrderShippedEvent event) {
     if (event.customerEmail() == null || event.customerEmail().isBlank()) {
