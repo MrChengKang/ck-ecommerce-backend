@@ -211,6 +211,9 @@ public class OrderController {
 
     order.setStatus(newStatus);
     orderRepository.save(order);
+    if ("Shipped".equals(currentStatus) && "Completed".equals(newStatus)) {
+      eventPublisher.publishEvent(OrderDeliveredEvent.fromOrder(order));
+    }
     return ResponseEntity.ok("Status updated");
   }
 
