@@ -48,20 +48,67 @@ public class ProductReview {
     if (createdAt == null) createdAt = LocalDateTime.now();
   }
 
-  public Long getId() { return id; }
-  public Long getProductId() { return productId; }
-  public void setProductId(Long productId) { this.productId = productId; }
-  public Long getOrderId() { return orderId; }
-  public void setOrderId(Long orderId) { this.orderId = orderId; }
-  public Long getCustomerId() { return customerId; }
-  public void setCustomerId(Long customerId) { this.customerId = customerId; }
-  public String getReviewerName() { return reviewerName; }
-  public void setReviewerName(String reviewerName) { this.reviewerName = reviewerName; }
-  public Integer getRating() { return rating; }
-  public void setRating(Integer rating) { this.rating = rating; }
-  public String getComment() { return comment; }
-  public void setComment(String comment) { this.comment = comment; }
-  public boolean isVisible() { return visible; }
-  public void setVisible(boolean visible) { this.visible = visible; }
-  public LocalDateTime getCreatedAt() { return createdAt; }
+  public Long getId() {
+    return id;
+  }
+
+  public Long getProductId() {
+    return productId;
+  }
+
+  public void setProductId(Long productId) {
+    this.productId = productId;
+  }
+
+  public Long getOrderId() {
+    return orderId;
+  }
+
+  public void setOrderId(Long orderId) {
+    this.orderId = orderId;
+  }
+
+  public Long getCustomerId() {
+    return customerId;
+  }
+
+  public void setCustomerId(Long customerId) {
+    this.customerId = customerId;
+  }
+
+  public String getReviewerName() {
+    return reviewerName;
+  }
+
+  public void setReviewerName(String reviewerName) {
+    this.reviewerName = reviewerName;
+  }
+
+  public Integer getRating() {
+    return rating;
+  }
+
+  public void setRating(Integer rating) {
+    this.rating = rating;
+  }
+
+  public String getComment() {
+    return comment;
+  }
+
+  public void setComment(String comment) {
+    this.comment = comment;
+  }
+
+  public boolean isVisible() {
+    return visible;
+  }
+
+  public void setVisible(boolean visible) {
+    this.visible = visible;
+  }
+
+  public LocalDateTime getCreatedAt() {
+    return createdAt;
+  }
 }
