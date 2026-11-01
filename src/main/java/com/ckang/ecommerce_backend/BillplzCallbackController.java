@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.context.ApplicationEventPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,12 +24,15 @@ public class BillplzCallbackController {
 
   private final BillplzService billplzService;
   private final OrderRepository orderRepository;
+  private final ApplicationEventPublisher eventPublisher;
 
   public BillplzCallbackController(
       BillplzService billplzService,
-      OrderRepository orderRepository) {
+      OrderRepository orderRepository,
+      ApplicationEventPublisher eventPublisher) {
     this.billplzService = billplzService;
     this.orderRepository = orderRepository;
+    this.eventPublisher = eventPublisher;
   }
 
   @Transactional
@@ -75,13 +79,17 @@ public class BillplzCallbackController {
       return ResponseEntity.badRequest().body("Invalid payment amount");
     }
 
-    // Idempotent: repeated callbacks leave an already-paid order paid.
+    // Publish only on the first transition to PAID; repeated callbacks stay idempotent.
+    boolean newlyPaid = !"PAID".equalsIgnoreCase(order.getPaymentStatus());
     order.setPaymentStatus("PAID");
     if ("Pending".equalsIgnoreCase(order.getStatus())) {
       order.setStatus("Processing");
     }
     orderRepository.save(order);
     logger.info("Confirmed Billplz payment for order {}", order.getId());
+    if (newlyPaid) {
+      eventPublisher.publishEvent(PaymentConfirmedEvent.fromOrder(order));
+    }
 
     return ResponseEntity.ok("Payment confirmed");
   }

@@ -290,6 +290,7 @@ public class OrderController {
         order.setStatus("Processing");
       }
       orderRepository.save(order);
+      eventPublisher.publishEvent(PaymentConfirmedEvent.fromOrder(order));
       return ResponseEntity.ok(Map.of(
           "paymentStatus", order.getPaymentStatus(),
           "orderStatus", order.getStatus(),
