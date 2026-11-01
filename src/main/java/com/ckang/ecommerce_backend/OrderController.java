@@ -38,6 +38,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClientException;
+import org.springframework.context.ApplicationEventPublisher;
 import java.net.URI;
 
 @RestController
@@ -62,6 +63,9 @@ public class OrderController {
 
   @Autowired
   private InventoryService inventoryService;
+
+  @Autowired
+  private ApplicationEventPublisher eventPublisher;
 
   @Value("${billplz.callback-url}")
   private String billplzCallbackUrl;
@@ -696,6 +700,17 @@ public class OrderController {
     }
 
     orderRepository.save(order);
+
+    if ("Processing".equals(currentStatus)) {
+      eventPublisher.publishEvent(new OrderShippedEvent(
+          order.getId(),
+          order.getOrderNumber(),
+          order.getCustomerEmail(),
+          carrier,
+          trackingNumber,
+          order.getTrackingUrl()));
+    }
+
     return ResponseEntity.ok(toAdminOrderResponse(order));
   }
 
