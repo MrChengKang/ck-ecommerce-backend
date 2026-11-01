@@ -5,8 +5,6 @@ import java.util.HashMap;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,13 +25,10 @@ public class AuthController {
   private JwtUtils jwtUtils;
 
   @Autowired
-  private JavaMailSender mailSender;
+  private EmailApiService emailApiService;
 
   @Autowired
   private BCryptPasswordEncoder passwordEncoder;
-
-  @org.springframework.beans.factory.annotation.Value("${spring.mail.username}")
-  private String fromEmail;
 
   private java.util.Map<String, String> otpStorage = new java.util.HashMap<>();
 
@@ -139,12 +134,8 @@ public class AuthController {
   }
 
   private void sendOtpEmail(String toEmail, String otp) {
-    SimpleMailMessage message = new SimpleMailMessage();
-    message.setFrom(fromEmail);
-    message.setTo(toEmail);
-    message.setSubject("[CK STORE] Password Reset Verification Code");
-    message.setText("Hello! Your verification code is: " + otp + "\n\nThis code will expire in 5 minutes.");
-    mailSender.send(message);
+    emailApiService.sendText(toEmail, "[CK STORE] Password Reset Verification Code",
+        "Hello! Your verification code is: " + otp + "\n\nThis code will expire in 5 minutes.");
   }
 
   @PostMapping("/reset-password")

@@ -2,10 +2,6 @@ package com.ckang.ecommerce_backend;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.MailException;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -15,14 +11,10 @@ import org.springframework.scheduling.annotation.Async;
 public class ShipmentNotificationService {
   private static final Logger logger = LoggerFactory.getLogger(ShipmentNotificationService.class);
 
-  private final JavaMailSender mailSender;
-  private final String fromEmail;
+  private final EmailApiService emailApiService;
 
-  public ShipmentNotificationService(
-      JavaMailSender mailSender,
-      @Value("${spring.mail.username}") String fromEmail) {
-    this.mailSender = mailSender;
-    this.fromEmail = fromEmail;
+  public ShipmentNotificationService(EmailApiService emailApiService) {
+    this.emailApiService = emailApiService;
   }
 
   @Async
@@ -49,16 +41,10 @@ public class ShipmentNotificationService {
 
     body.append("\nThank you for your purchase.");
 
-    SimpleMailMessage message = new SimpleMailMessage();
-    message.setFrom(fromEmail);
-    message.setTo(event.customerEmail());
-    message.setSubject("Your order has shipped");
-    message.setText(body.toString());
-
     try {
-      mailSender.send(message);
+      emailApiService.sendText(event.customerEmail(), "Your order has shipped", body.toString());
       logger.info("Sent shipment notice for order {}", event.orderId());
-    } catch (MailException e) {
+    } catch (Exception e) {
       logger.error("Could not send shipment notice for order {}", event.orderId(), e);
     }
   }
