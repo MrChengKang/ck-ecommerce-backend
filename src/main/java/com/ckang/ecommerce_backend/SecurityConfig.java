@@ -43,6 +43,7 @@ public class SecurityConfig {
                                 "/api/auth/reset-password")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products/**", "/api/categories/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/reviews/products/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/uploads/**").permitAll()
 
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
@@ -59,6 +60,7 @@ public class SecurityConfig {
 
                         .requestMatchers("/api/users/me/**").authenticated()
                         .requestMatchers("/api/wishlist/**").authenticated()
+                        .requestMatchers("/api/reviews/**").authenticated()
 
                         .requestMatchers(HttpMethod.POST, "/api/payments/billplz/callback").permitAll()
 
