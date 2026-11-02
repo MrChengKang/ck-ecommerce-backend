@@ -233,6 +233,53 @@ public class OrderController {
   }
 
   @Transactional
+  @PostMapping("/{id}/cancel")
+  public ResponseEntity<?> cancelMyPendingOrder(
+      @PathVariable Long id,
+      Authentication authentication) {
+    if (authentication == null) {
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+    }
+
+    User user = userRepository.findByUsername(authentication.getName()).orElse(null);
+    if (user == null) {
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+    }
+
+    Order order = orderRepository.findByIdForUpdate(id).orElse(null);
+    if (order == null) {
+      return ResponseEntity.notFound().build();
+    }
+    if (!user.getId().equals(order.getCustomerId())) {
+      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+    }
+    if (order.isArchived()) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body("Archived orders cannot be cancelled");
+    }
+    if ("Cancelled".equalsIgnoreCase(order.getStatus())) {
+      return ResponseEntity.ok("Order is already cancelled");
+    }
+    if (!"Pending".equalsIgnoreCase(order.getStatus()) ||
+        "PAID".equalsIgnoreCase(order.getPaymentStatus())) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body("Only unpaid pending orders can be cancelled");
+    }
+    if (!billplzService.deleteUnpaidBill(order.getBillplzBillId())) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body("Could not confirm the Billplz payment is unpaid. Verify payment before trying again.");
+    }
+    if (!inventoryService.restoreInventory(order)) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body("Could not safely restore inventory for this order");
+    }
+
+    order.setStatus("Cancelled");
+    orderRepository.save(order);
+    return ResponseEntity.ok("Order cancelled and reserved stock released");
+  }
+
+  @Transactional
   @PostMapping("/{id}/payment/reconcile")
   public ResponseEntity<?> reconcilePayment(
       @PathVariable Long id,

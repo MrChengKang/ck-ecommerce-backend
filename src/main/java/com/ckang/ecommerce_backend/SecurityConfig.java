@@ -55,6 +55,7 @@ public class SecurityConfig {
 
                         .requestMatchers("/api/orders/my-orders").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/orders/checkout").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/orders/*/cancel").authenticated()
                         .requestMatchers("/api/orders/*/payment").authenticated()
                         .requestMatchers("/api/orders/**").hasRole("ADMIN")
 
