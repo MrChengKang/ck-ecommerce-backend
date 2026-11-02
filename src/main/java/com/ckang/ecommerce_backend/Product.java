@@ -21,4 +21,10 @@ public class Product {
   private String category;
   @Column(name = "created_at")
   private LocalDateTime createdAt = LocalDateTime.now();
+
+  @Transient
+  private Double averageRating = 0.0;
+
+  @Transient
+  private Long reviewCount = 0L;
 }

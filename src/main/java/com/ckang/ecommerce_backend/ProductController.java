@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.file.*;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 
 @RestController
 @RequestMapping("/api/products")
@@ -17,10 +18,25 @@ public class ProductController {
   @Autowired
   private ProductRepository productRepository;
 
+  @Autowired
+  private ProductReviewRepository productReviewRepository;
+
   // --- 1. 獲取所有商品 ---
   @GetMapping
   public List<Product> getAllProducts() {
-    return productRepository.findAll();
+    List<Product> products = productRepository.findAll();
+    Map<Long, ProductRatingSummary> ratingByProductId = new HashMap<>();
+    productReviewRepository.findVisibleProductRatingSummaries().forEach(
+        summary -> ratingByProductId.put(summary.getProductId(), summary));
+
+    products.forEach(product -> {
+      ProductRatingSummary summary = ratingByProductId.get(product.getId());
+      if (summary != null) {
+        product.setAverageRating(summary.getAverageRating());
+        product.setReviewCount(summary.getReviewCount());
+      }
+    });
+    return products;
   }
 
   // --- 2. 獲取單一商品 ---
